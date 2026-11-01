@@ -1,0 +1,75 @@
+name: release
+
+# 推送 vX.Y.Z 标签即发布：交叉编译多平台、生成更新日志、创建 GitHub Release。
+#   git tag v0.2.0 && git push origin v0.2.0
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # 创建 Release 需要
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 需要完整历史来生成更新日志
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+
+      - name: Build multi-platform binaries
+        working-directory: cli
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          for p in windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${p%/*}"; arch="${p#*/}"
+            bin="qianji"; [ "$os" = "windows" ] && bin="qianji.exe"
+            echo "==> building $os/$arch"
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
+              go build -trimpath -ldflags "-s -w -X main.cliVersion=${VERSION}" -o "$bin" .
+            name="qianji_${VERSION}_${os}_${arch}"
+            if [ "$os" = "windows" ]; then
+              zip -j "$GITHUB_WORKSPACE/dist/${name}.zip" "$bin"
+            else
+              tar -czf "$GITHUB_WORKSPACE/dist/${name}.tar.gz" "$bin"
+            fi
+            rm -f "$bin"
+          done
+          cd "$GITHUB_WORKSPACE/dist"
+          sha256sum * > checksums.txt
+          echo "--- artifacts ---"; ls -la
+
+      - name: Generate changelog
+        run: |
+          set -euo pipefail
+          PREV=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          {
+            if [ -n "$PREV" ]; then
+              echo "自 \`${PREV}\` 以来的更新："
+              echo
+              git log --no-merges --pretty='- %s (%h)' "${PREV}..${GITHUB_REF_NAME}"
+            else
+              echo "首个版本。"
+              echo
+              git log --no-merges --pretty='- %s (%h)' "${GITHUB_REF_NAME}"
+            fi
+            echo
+            echo "---"
+            echo "下载对应平台的压缩包，解压即得单文件 \`qianji\`（Windows 为 \`qianji.exe\`）。校验见 \`checksums.txt\`。"
+          } > "$GITHUB_WORKSPACE/RELEASE_NOTES.md"
+          echo "--- release notes ---"; cat "$GITHUB_WORKSPACE/RELEASE_NOTES.md"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: RELEASE_NOTES.md
+          files: dist/*
+          draft: false
+          prerelease: false

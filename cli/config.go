@@ -9,9 +9,10 @@ import (
 	"path/filepath"
 )
 
-// cliVersion is this tool's own version. It is surfaced as the device name
-// (devname) so it shows up in Qianji's 登录记录 as e.g. "QianJi-CLI/0.1.0".
-const cliVersion = "0.1.0"
+// cliVersion is this tool's own version, surfaced as the device name (devname)
+// so it shows up in Qianji's 登录记录 as e.g. "QianJi-CLI/0.1.0". It is a var so
+// release builds can inject the tag: -ldflags "-X main.cliVersion=v1.2.3".
+var cliVersion = "0.1.0"
 
 // Config is persisted in a .qianji-cli directory next to the executable after login.
 type Config struct {
