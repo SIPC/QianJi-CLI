@@ -23,7 +23,8 @@ GOOS=darwin  GOARCH=arm64 go build -o qianji .
 
 ```
 qianji login [--account <手机号/邮箱>] [--password <密码>]  登录；密码也可取自 $QIANJI_PASSWORD，否则交互输入
-qianji whoami                            显示当前登录用户
+qianji whoami                            显示本地登录态（account/uid/token）
+qianji me                                显示线上用户资料（昵称/邮箱/VIP/头像）
 qianji logout                            清除本地 token
 qianji books                             列出账本
 qianji assets                            列出资产账户
@@ -59,6 +60,10 @@ qianji billimage _eeaa93c4790f4dcd9e16f62bc6109368 --size md  # 中图 640
 ```
 
   图片存在 `http://billimg.qianjiapp.com/<id>!<规格>`，规格 `webporigin`（原图）/ `webpmd640`（中 640）/ `webpsmall240`（缩略 240），返回 webp，凭图片 id 公开访问、不需要 token。
+
+### 用户资料与头像
+
+`qianji me` 显示线上资料（昵称、邮箱、性别、注册时间、VIP 类型/起止、微信绑定、头像 URL），数据取自 `vip/config` 的 `config.userinfo`，即 App「我的」页。头像 `avatar` 是完整 URL（`http://img.qianjiapp.com/<id>!qianjiwebp`），可直接访问。`whoami` 则只显示本地保存的登录态。
 
 ### 设备信息（重要）
 

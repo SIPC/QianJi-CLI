@@ -33,6 +33,8 @@ func main() {
 		cmdLogout(cfg)
 	case "whoami":
 		cmdWhoami(cfg)
+	case "me", "profile":
+		cmdMe(cfg)
 	case "books":
 		cmdBooks(cfg)
 	case "assets":
@@ -71,7 +73,8 @@ func usage() {
 
 Usage:
   qianji login [--account <a>] [--password <p>]  Log in; password also via $QIANJI_PASSWORD or prompt
-  qianji whoami                             Show the logged-in user
+  qianji whoami                             Show the locally saved login (account/uid/token)
+  qianji me                                 Show your online profile (name/email/VIP/avatar)
   qianji logout                             Forget the saved token
   qianji books                              List account books (账本)
   qianji assets                             List assets (资产账户)
@@ -192,6 +195,26 @@ func cmdWhoami(cfg *Config) {
 	}
 	fmt.Printf("account: %s\nname:    %s\nuid:     %s\ntoken:   %s\n",
 		cfg.Account, cfg.Name, cfg.UID, mask(cfg.Token))
+}
+
+// cmdMe prints the online user profile — name, email, gender, VIP, and the
+// avatar URL. The app reads this from vip/config under config.userinfo.
+func cmdMe(cfg *Config) {
+	requireLogin(cfg)
+	env, err := newClient(cfg).call("vip", "config", map[string]string{})
+	if err != nil {
+		fatal(err)
+	}
+	var wrap struct {
+		Config struct {
+			UserInfo json.RawMessage `json:"userinfo"`
+		} `json:"config"`
+	}
+	if json.Unmarshal(env.Data, &wrap) == nil && len(wrap.Config.UserInfo) > 0 {
+		printJSON(wrap.Config.UserInfo)
+		return
+	}
+	printJSON(env.Data)
 }
 
 func cmdBooks(cfg *Config) {

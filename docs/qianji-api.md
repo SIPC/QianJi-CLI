@@ -32,6 +32,7 @@
 - Content-Type 为 `application/x-www-form-urlencoded; charset=UTF-8`；传输走 HTTP/1.1（App 的 Volley HurlStack 基于 HttpURLConnection）
 - 账单拉取：`syncv2/pull`，分页参数 `pageoffset`、`pagesign`，增量参数 `lasttimes`（JSON）
 - 账单写入：`bill/syncall`，`v` 形如 `{<key>: {changelist: [...], dellist: [...]}}`（`key` 未确认）
+- 用户资料：`vip/config` 返回的 `config.userinfo` 是当前用户信息（`avatar`/`name`/`email`/`gender`/`platform`/`viptype`/`vipstart`/`vipend`/`weixinid` 等），即 App「我的」页的数据源
 
 ## 账单模型
 
