@@ -61,7 +61,7 @@ func (d Device) withDefaults() Device {
 	// so it is recognizable in the account's 登录记录. Override to blend in if wanted.
 	return Device{
 		Brand:    def(d.Brand, "QianJi-CLI"),
-		Name:     def(d.Name, "QianJi-CLI/"+cliVersion),
+		Name:     def(d.Name, cliVersion),
 		OSVer:    def(d.OSVer, "33"),
 		Market:   def(d.Market, "qianji-cli"),
 		TZOffset: def(d.TZOffset, "28800"),
