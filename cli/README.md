@@ -124,7 +124,7 @@ qianji billimage _eeaa93c4790f4dcd9e16f62bc6109368 --size md  # 中图 640
 
 - **已验证**：登录 + 只读接口在真实账号上跑通——`login`、`books`、`assets`、`bills`、`client/init`（带登录态）均返回正常数据。
 - **关键坑（已修）**：服务器对带登录态的请求**大小写敏感地校验请求头**，头名必须全小写（`utoken` 而非 `Utoken`）。Go 的 `http.Header.Set` 会自动规范成首字母大写，导致所有鉴权接口返回 `当前版本太旧`，而免鉴权接口正常——极易误判成版本号或签名问题。本 CLI 直接写 `Header[name]` 绕过规范化。详见 [../docs/qianji-api.md](../docs/qianji-api.md)。
-- **写入（已实现，默认 dry-run + 二次确认）**：`add` 记一笔、`del` 删账单，都走 `bill/syncall`。协议已从 App 逆向（`v = {登录uid: {changelist:[账单], dellist:[billid]}}`），命令默认只打印将发送的 `v`，`--confirm` 并输入 `yes` 才真正写入。⚠️ **尚未在真实账号实测**——第一次实际提交请先用一笔最小账单验证（成功后可用 `del` 删掉）。
+- **写入（已实现并实测通过，默认 dry-run + 二次确认）**：`add` 记一笔、`del` 删账单，走 `bill/syncall`（`v = {"bills": {changelist:[账单], dellist:[billid]}}`，新账单 `status=2`、17 位 id、带 `updatetime`）。命令默认只打印将发送的 `v`，`--confirm` 并输入 `yes` 才真正写入；已在真实账号验证 add 写入 / del 删除往返成功。
 - **仍待做**：预算设置（`budget/submitv2`）、预算查询（`budget/list`，需账本 `range` + `DateFilter`）。
 
 ## 后续：MCP

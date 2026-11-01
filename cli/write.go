@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+// billSyncKey is the outer key of bill/syncall's v: {billSyncKey: {changelist,
+// dellist}}. The app's bh/a.getKey() returns the literal "bills".
+const billSyncKey = "bills"
+
 // cmdAdd writes one bill via bill/syncall. It is DRY-RUN by default (prints the
 // v payload it would send) and only submits with --confirm, after an interactive
 // yes. Bill fields mirror Bill.toSyncJson() recovered from the app; the outer
@@ -94,8 +98,8 @@ func cmdAdd(cfg *Config, args []string) {
 		t = parsed
 	}
 	now := time.Now()
-	// Bill id looks like unix-millis * 1000 + a small serial in the real data.
-	id := now.UnixMilli()*1000 + int64(now.Nanosecond()/1e6%1000)
+	// Bill id in the real data is unix-millis * 10000 + a 4-digit serial.
+	id := now.UnixMilli()*10000 + int64(now.Nanosecond()/1e5%10000)
 
 	bill := map[string]any{
 		"id":         id,
@@ -107,15 +111,16 @@ func cmdAdd(cfg *Config, args []string) {
 		"cateid":     cateID,
 		"assetid":    assetID,
 		"remark":     remark,
-		"status":     1,
+		"status":     2, // 2 = not-yet-synced; server treats it as a new bill
 		"createtime": now.Unix(),
+		"updatetime": now.Unix(),
 		"platform":   0, // manual
 	}
 	inner := map[string]any{
 		"changelist": []any{bill},
 		"dellist":    []any{},
 	}
-	v := map[string]any{cfg.UID: inner}
+	v := map[string]any{billSyncKey: inner}
 	vb, _ := json.Marshal(v)
 
 	summary := fmt.Sprintf("%s %.2f  分类 %d  资产 %d  账本 %d  %s  备注 %q",
@@ -138,7 +143,7 @@ func cmdAdd(cfg *Config, args []string) {
 	if err != nil {
 		fatal(err)
 	}
-	fmt.Fprintln(os.Stderr, "已提交。服务器返回：")
+	fmt.Fprintf(os.Stderr, "已写入，账单 id：%d（如需撤销：qianji del %d --confirm）\n服务器返回：\n", id, id)
 	printJSON(env.Data)
 }
 
@@ -177,7 +182,7 @@ func cmdDel(cfg *Config, args []string) {
 		}
 		dellist = append(dellist, n)
 	}
-	v := map[string]any{cfg.UID: map[string]any{"changelist": []any{}, "dellist": dellist}}
+	v := map[string]any{billSyncKey: map[string]any{"changelist": []any{}, "dellist": dellist}}
 	vb, _ := json.Marshal(v)
 
 	if !confirm {
