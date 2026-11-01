@@ -279,6 +279,20 @@ var mcpTools = []mcpTool{
 	{"qianji_del", "按 id 删除账单（直接删除真实账单，谨慎）", objSchema(map[string]any{
 		"billid": numProp("账单 id"),
 	}, "billid"), delToolRun},
+	{"qianji_budget", "查询某账本某月或某年的预算（总预算和分类预算）", objSchema(map[string]any{
+		"bookid": strProp("账本 id（见 qianji_books）"),
+		"month":  strProp("月份 2026-11，默认当前月"),
+		"year":   strProp("年份 2026，查年度预算；与 month 二选一"),
+	}, "bookid"), budgetToolRun},
+	{"qianji_budget_set", "修改一项预算：传 total 改总预算，或传 cate + money 改分类预算（money 为 0 表示删除）。服务器按整期覆盖，默认只返回预览，confirm=true 才真正写入", objSchema(map[string]any{
+		"bookid":  strProp("账本 id（见 qianji_books）"),
+		"month":   strProp("月份 2026-11，默认当前月"),
+		"year":    strProp("年份 2026，改年度预算；与 month 二选一"),
+		"total":   numProp("总预算金额"),
+		"cate":    strProp("支出分类名或 id（见 qianji_categories）；名字重复时要用 id"),
+		"money":   numProp("分类预算金额，0 表示删除"),
+		"confirm": map[string]any{"type": "boolean", "description": "true 才写入，默认只预览"},
+	}, "bookid"), budgetSetToolRun},
 	{"qianji_raw", "对任意签名接口发请求（高级）", objSchema(map[string]any{
 		"ctrl":   strProp("控制器，如 book"),
 		"act":    strProp("动作，如 list"),

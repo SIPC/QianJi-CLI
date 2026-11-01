@@ -460,6 +460,57 @@ func renderRepeat(data json.RawMessage) {
 	}
 }
 
+// renderBudgets prints the total, then each category under its parent. Like the
+// app's header, a total with no limit of its own shows the category figures.
+func renderBudgets(p budgetPeriod, cats map[int64]cateInfo) func(json.RawMessage) {
+	return func(data json.RawMessage) {
+		items, err := decodeBudgets(data)
+		if err != nil {
+			printJSON(data)
+			return
+		}
+		fmt.Printf("%s 预算\n", p)
+		if len(items) == 0 {
+			fmt.Println("(当期未设预算)")
+			return
+		}
+		list := normalizeBudgets(cloneBudgets(items), cats, func() budgetItem {
+			return budgetItem{"flag": budgetFlagFull, "money": 0.0}
+		})
+		for _, b := range list {
+			limit := budgetMoney(b)
+			used, hasUsed := budgetNum(b, "used")
+			label := budgetLabel(b, cats)
+			if isFullBudget(b) {
+				cateLimit, _ := budgetNum(b, "totalCateLimit")
+				if limit <= cateLimit {
+					used, _ = budgetNum(b, "totalCateUsed")
+					hasUsed = true
+					label += "（分类合计）"
+				}
+			} else if c, ok := cats[budgetCateID(b)]; ok && c.Parent != -1 {
+				label = "  └ " + label
+			}
+			line := fmt.Sprintf("%-16s %10s", label, money(limit))
+			if hasUsed {
+				line += "  已用 " + money(used)
+				if left := limit - used; left >= 0 {
+					line += "  剩余 " + money(left)
+				} else {
+					line += "  超支 " + money(-left)
+				}
+			}
+			if n := budgetInt(b, "count", 0); n > 0 {
+				line += fmt.Sprintf("  %d 笔", n)
+			}
+			fmt.Println(line)
+			if v, _ := budgetNum(b, "notbudget"); isFullBudget(b) && v > 0 {
+				fmt.Printf("  不计入预算 %s\n", money(v))
+			}
+		}
+	}
+}
+
 func renderInstallment(data json.RawMessage) {
 	var w struct {
 		List []json.RawMessage `json:"list"`

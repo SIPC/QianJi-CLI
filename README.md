@@ -9,8 +9,8 @@
 - **查询**（三种输出：默认人读 / `--json` / `--raw`）
   - 用户资料、账本、资产账户、分类
   - **账单**：本地增量缓存（首次全量、之后秒回），可按时间 / 类型 / 分类（名或 id）/ 金额 / 关键词筛选，显示分类名
-  - 存钱计划、货币、登录设备、周期记账、分期、账单图片 URL
-- **写入**（默认 dry-run，`--confirm` + 手动 `yes` 才生效）：记一笔 `add`、删账单 `del`
+  - 预算、存钱计划、货币、登录设备、周期记账、分期、账单图片 URL
+- **写入**（默认 dry-run，`--confirm` + 手动 `yes` 才生效）：记一笔 `add`、删账单 `del`、改预算 `budget set`
 - **MCP server**：`qianji mcp` 起一个 HTTP MCP server，把查询和写入暴露为工具，供 Claude / ChatGPT 等 MCP 客户端调用（密钥路径认证）
 - **Docker**：现成镜像 [`sipcink/qianji-mcp`](https://hub.docker.com/r/sipcink/qianji-mcp)，配置用卷持久化
 - **自动发版**：打 `vX.Y.Z` 标签，GitHub Actions 自动交叉编译 6 平台（Windows / Linux / macOS × amd64 / arm64）并创建带更新日志的 Release
@@ -48,6 +48,7 @@ QIANJI_PASSWORD='你的密码' ./qianji login --account 13800000000
 | `saving` `currency` `logins` `repeat` `installment` | 存钱 / 货币 / 登录设备 / 周期记账 / 分期 |
 | `billimage <id>...` | 账单图片 id → 可下载 URL |
 | `add` / `del` | 记一笔 / 删账单（默认 dry-run） |
+| `budget` / `budget set` | 查预算 / 改一项预算（`set` 默认 dry-run），都要 `--book`，周期用 `--month` 或 `--year` |
 | `raw <ctrl> <act> [k=v ...]` | 对任意接口发签名请求 |
 | `mcp [--addr :8787]` | 启动 MCP server |
 | `version` | 版本 |
@@ -61,7 +62,7 @@ QIANJI_MCP_PATH=一长串随机密钥 ./qianji mcp --addr :8787
 # 端点： POST http://localhost:8787/mcp/<密钥>
 ```
 
-手写 JSON-RPC over Streamable HTTP，**认证即密钥路径**（`/mcp/<密钥>`，错误路径一律 404）。暴露 `qianji_me/books/assets/categories/bills/saving/currency/logins/repeat/add/del/raw` 等工具。
+手写 JSON-RPC over Streamable HTTP，**认证即密钥路径**（`/mcp/<密钥>`，错误路径一律 404）。暴露 `qianji_me/books/assets/categories/bills/saving/currency/logins/repeat/add/del/budget/budget_set/raw` 等工具。
 
 > ⚠️ 工具含写入，能改你的真实账单。密钥路径是唯一防线——别泄露带密钥的完整 URL，对公网务必加 HTTPS 反代。
 

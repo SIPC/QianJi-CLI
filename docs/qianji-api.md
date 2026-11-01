@@ -32,6 +32,7 @@
 - Content-Type 为 `application/x-www-form-urlencoded; charset=UTF-8`；传输走 HTTP/1.1（App 的 Volley HurlStack 基于 HttpURLConnection）
 - 账单拉取：`syncv2/pull`，分页参数 `pageoffset`、`pagesign`，增量参数 `lasttimes`（JSON）
 - 账单写入：`bill/syncall`，`v = {"bills": {changelist: [账单], dellist: [billid]}}`。外层 key 是字面量 `"bills"`（`bh/a.getKey()`，**不是** uid）。账单对象 = `Bill.toSyncJson()`：gson 序列化后移除 `category`/`fromact`/`targetact`/`paytype`/`bookname`，字段同 `syncv2/pull` 的 changes（`id`/`userid`/`bookid`/`time`/`type`/`money`/`cateid`/`assetid`/`remark`/`status`/`createtime`/`updatetime`/`platform`）。要点（已在真实账号实测）：**新账单必须 `status=2`（未同步）服务器才会新增**；`id` 形如 unix 毫秒 × 10000 + 序列（17 位）；需带 `updatetime`。删除把 billid 放进 `dellist` 即可。返回 `sync_result.bill`（`new_count`/`del_total`/`has_failed` 等）。
+- 预算（来自反编译，未经线上验证）：`budget/list` 和 `budget/submitv2` 都带 `bookid`、`flts`，账本有 `config.range` 时再带 `range`。`flts` 是 `{"month":"2026,3"}`（月份不补零）或 `{"year":"2026"}`，响应是 `list`（可能还有 `daystats`）。`submitv2` 的 `changelist` 是该周期的**整份**预算数组，由 `Budget.toAPIJson()` 生成（移除 `category`、`createtime`）。字段：`budgetid`、`bookid`、`userid`、`type`（1 月 / 2 年）、`typeinfo`（同 `flts` 的值）、`flag`（1 总预算 / 2 分类）、`cateid`（总预算为 -1）、`money`、`used`、`count`、`notbudget`、`totalCateUsed`、`totalCateLimit`。App 提交前会抬高额度：父分类不低于子分类之和，总预算不低于分类合计；有分类预算而没有总预算时自动补一条总预算。
 - 用户资料：`vip/config` 返回的 `config.userinfo` 是当前用户信息（`avatar`/`name`/`email`/`gender`/`platform`/`viptype`/`vipstart`/`vipend`/`weixinid` 等），即 App「我的」页的数据源
 - 会员类型（`viptype`，名称见 `vip/config.types` 的 `name2`）：`2` 月度会员、`3` 半年会员、`4` 年度会员、`100` 终身会员
 

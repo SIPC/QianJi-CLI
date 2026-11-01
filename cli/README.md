@@ -39,6 +39,9 @@ qianji installment                       列出分期
 qianji billimage <图片id>... [--size origin|md|small]  由账单图片 id 生成图片 URL
 qianji add --type <t> --money <m> --cate <id> --asset <id> [...] [--confirm]  记一笔（默认 dry-run）
 qianji del <billid>... [--confirm]       删除账单（默认 dry-run）
+qianji budget --book <id> [--month 2026-11 | --year 2026]  查预算（默认当前月）
+qianji budget set --book <id> [--month ... | --year ...] (--total <m> | --cate <名/id> --money <m>) [--confirm]
+                                         改一项预算，--money 0 删除该分类预算（默认 dry-run）
 ```
 
 登录（密码不回显，建议用环境变量）：
@@ -127,11 +130,11 @@ qianji billimage _eeaa93c4790f4dcd9e16f62bc6109368 --size md  # 中图 640
 - **已验证**：登录 + 只读接口在真实账号上跑通——`login`、`books`、`assets`、`bills`、`client/init`（带登录态）均返回正常数据。
 - **关键坑（已修）**：服务器对带登录态的请求**大小写敏感地校验请求头**，头名必须全小写（`utoken` 而非 `Utoken`）。Go 的 `http.Header.Set` 会自动规范成首字母大写，导致所有鉴权接口返回 `当前版本太旧`，而免鉴权接口正常——极易误判成版本号或签名问题。本 CLI 直接写 `Header[name]` 绕过规范化。详见 [../docs/qianji-api.md](../docs/qianji-api.md)。
 - **写入（已实现并实测通过，默认 dry-run + 二次确认）**：`add` 记一笔、`del` 删账单，走 `bill/syncall`（`v = {"bills": {changelist:[账单], dellist:[billid]}}`，新账单 `status=2`、17 位 id、带 `updatetime`）。命令默认只打印将发送的 `v`，`--confirm` 并输入 `yes` 才真正写入；已在真实账号验证 add 写入 / del 删除往返成功。
-- **仍待做**：预算设置（`budget/submitv2`）、预算查询（`budget/list`，需账本 `range` + `DateFilter`）。
+- **预算（已实现，尚未在真实账号验证）**：`budget` 走 `budget/list`，`budget set` 走 `budget/submitv2`。字段名和额度规则来自 App 反编译，目前只用本地假服务器测过；首次真实写入建议用远期周期（如 `--month 2030-1`）。写入按**整期覆盖**：先拉当期列表、改一项、按 App 规则抬高额度（父分类不低于子分类之和，总预算不低于分类合计），再整份提交，预览会列出所有被改动的额度。读取失败或返回其它周期的数据时直接中止。不支持复制预算和每日统计。
 
 ## MCP server
 
-`qianji mcp` 启动一个 HTTP MCP server，把查询和写入包成 MCP 工具（`qianji_me` / `books` / `assets` / `categories` / `bills` / `saving` / `currency` / `logins` / `repeat` / `add` / `del` / `raw`），供支持 MCP 的客户端调用。纯标准库手写 JSON-RPC 2.0（`initialize` / `tools/list` / `tools/call`）。
+`qianji mcp` 启动一个 HTTP MCP server，把查询和写入包成 MCP 工具（`qianji_me` / `books` / `assets` / `categories` / `bills` / `saving` / `currency` / `logins` / `repeat` / `add` / `del` / `budget` / `budget_set` / `raw`），供支持 MCP 的客户端调用。`qianji_budget_set` 默认只返回预览，传 `confirm=true` 才写入。纯标准库手写 JSON-RPC 2.0（`initialize` / `tools/list` / `tools/call`）。
 
 - **认证 = 密钥路径**：端点是 `/mcp/<密钥>`，只有 POST 到正确密钥路径才响应，其它一律 404。用 `$QIANJI_MCP_PATH` 固定密钥，留空则每次启动随机生成并打印。
 

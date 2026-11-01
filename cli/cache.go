@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,6 +128,38 @@ func loadCategoryMap(cfg *Config, book string) map[int64]string {
 		}
 	}
 	return m
+}
+
+// cateInfo is a category with its place in the tree; Parent is -1 at the top level.
+type cateInfo struct {
+	ID, Parent int64
+	Name       string
+}
+
+// loadExpenseCategories pulls a book's expense categories uncached. Budget rules
+// need the parent links and a current list, which the name cache above can't give.
+func loadExpenseCategories(cfg *Config, book string) (map[int64]cateInfo, error) {
+	env, err := newClient(cfg).call("category", "listv2", map[string]string{"bookid": book, "t": "0"})
+	if err != nil {
+		return nil, err
+	}
+	var w struct {
+		List []catNode `json:"list"`
+	}
+	if err := json.Unmarshal(env.Data, &w); err != nil {
+		return nil, fmt.Errorf("解析分类列表失败：%w", err)
+	}
+	if len(w.List) == 0 {
+		return nil, fmt.Errorf("账本 %s 的支出分类为空", book)
+	}
+	m := map[int64]cateInfo{}
+	for _, n := range w.List {
+		m[n.Id] = cateInfo{ID: n.Id, Parent: -1, Name: n.Name}
+		for _, s := range n.Sublist {
+			m[s.Id] = cateInfo{ID: s.Id, Parent: n.Id, Name: s.Name}
+		}
+	}
+	return m, nil
 }
 
 // syncBills runs an incremental pull into the local cache (via the server's

@@ -48,6 +48,8 @@ func main() {
 		cmdAdd(cfg, args)
 	case "del", "delete":
 		cmdDel(cfg, args)
+	case "budget":
+		cmdBudget(cfg, args)
 	case "mcp":
 		cmdMCP(cfg, args)
 	case "saving":
@@ -89,6 +91,10 @@ Usage:
   qianji add --type <t> --money <m> --cate <id> --asset <id> [--book <id>] [--remark <s>] [--time <ts>] [--confirm]
                                             Write one bill (dry-run unless --confirm)
   qianji del <billid>... [--confirm]        Delete bill(s) by id (dry-run unless --confirm)
+  qianji budget --book <id> [--month 2026-11 | --year 2026]
+                                            Budgets for a period (default: current month)
+  qianji budget set --book <id> [--month 2026-11 | --year 2026] (--total <m> | --cate <名/id> --money <m>) [--confirm]
+                                            Change one limit; --money 0 removes it (dry-run unless --confirm)
   qianji mcp [--addr :8787]                 Start an MCP server (HTTP, secret path) exposing the tools
   qianji saving                             List saving plans (存钱计划)
   qianji currency                           List currencies (货币)
