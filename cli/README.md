@@ -88,7 +88,7 @@ qianji billimage _eeaa93c4790f4dcd9e16f62bc6109368 --size md  # 中图 640
 每个请求都带一组设备头：`devbrand`、`devname`、`devid`、`osvs`、`mk`、时区、语言、地区。钱迹服务器会**按设备记录登录**（App 内「账号与安全 → 登录记录」能看到），并支持远程移除某台设备的登录。
 
 - `devid` 不是硬件标识：App 本身用的也是一个随机 UUID 的 MD5、存在本地。本 CLI 同样生成一个随机 `devid` 存进配置，**不读取任何真实硬件 ID**，不泄露 IMEI / Android ID 之类。
-- 默认 `devbrand` / `devname` 诚实标识为 **厂商 `QianJi-CLI` / 型号 `<版本号>`**（型号即 `qianji version` 的版本号），不伪装成真机。登录记录里会看到厂商 `QianJi-CLI`、型号 `0.1.0` 的设备——一眼认出是这个工具和它的版本。
+- 默认 `devbrand` / `devname` 诚实标识为 **厂商 `QianJi-CLI` / 型号 `<版本号>`**（型号即 `qianji version` 的版本号），不伪装成真机。登录记录里会看到厂商 `QianJi-CLI`、型号 `0.2.0` 的设备——一眼认出是这个工具和它的版本。
 
 如果你更希望它和手机上的现有记录看起来一致、减少被风控或安全提醒打扰，可以在 `config.json` 里改成你真机的值：
 
