@@ -1,7 +1,7 @@
 name: release
 
 # 推送 vX.Y.Z 标签即发布：交叉编译多平台、生成更新日志、创建 GitHub Release。
-#   git tag v0.3.0 && git push origin v0.3.0
+#   git tag v0.3.1 && git push origin v0.3.1
 on:
   push:
     tags:
