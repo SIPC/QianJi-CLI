@@ -144,7 +144,7 @@ QIANJI_MCP_PATH=你的一长串随机密钥 ./qianji mcp --addr :8787
 
 ## Docker
 
-[Dockerfile](../Dockerfile) 多阶段构建，产出 distroless 小镜像跑 MCP server。配置和账单/分类缓存都落在容器里的 `/data`（`QIANJI_CONFIG_DIR=/data`），挂个卷就能持久化，登录一次即可反复用。
+[Dockerfile](../Dockerfile) 多阶段构建，产出 alpine 小镜像（带 shell，方便 `docker exec` 进容器 login / 排查）跑 MCP server。配置和账单/分类缓存都落在容器里的 `/data`（`QIANJI_CONFIG_DIR=/data`），挂个卷就能持久化，登录一次即可反复用。
 
 ```bash
 docker build -t qianji-mcp .

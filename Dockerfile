@@ -13,13 +13,14 @@ WORKDIR /src
 COPY cli/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /qianji .
 
-# --- runtime (distroless: 无 shell、体积小、较安全) ---
-FROM gcr.io/distroless/static-debian12
+# --- runtime (alpine: 体积小且带 shell，便于 docker exec 进容器 login / 排查) ---
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates tzdata
 COPY --from=build /qianji /usr/local/bin/qianji
 # 配置 + 账单/分类缓存都落在 /data，挂卷即持久化
 ENV QIANJI_CONFIG_DIR=/data
 VOLUME ["/data"]
 EXPOSE 8787
-# entrypoint 拆开，便于 `docker run ... login ...` 覆盖默认的 mcp 命令
+# entrypoint 拆开，便于 `docker run ... login` 或 `docker exec -it <容器> sh` 进去
 ENTRYPOINT ["qianji"]
 CMD ["mcp", "--addr", ":8787"]
