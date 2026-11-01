@@ -18,6 +18,15 @@ type Config struct {
 	DevID   string `json:"devid"`
 	Host    string `json:"host,omitempty"`
 
+	// VS/VSN override the app version sent as the vs/vsn headers. Leave empty
+	// to use the built-in defaults; set them (or $QIANJI_VS / $QIANJI_VSN) if
+	// the server starts rejecting the built-in version as too old.
+	VS  string `json:"vs,omitempty"`
+	VSN string `json:"vsn,omitempty"`
+
+	// UA overrides the User-Agent header (default mimics Android's Dalvik UA).
+	UA string `json:"ua,omitempty"`
+
 	// Device is the device fingerprint sent on every request. The server records
 	// it as a login device (see "登录记录" in the app). Defaults identify this tool
 	// as "QianJi-CLI"; override to match your real phone if you'd rather blend in.

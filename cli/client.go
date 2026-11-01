@@ -1,11 +1,13 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -19,7 +21,12 @@ type Client struct {
 }
 
 func newClient(cfg *Config) *Client {
-	return &Client{cfg: cfg, http: &http.Client{Timeout: 30 * time.Second}}
+	// The app's Volley HurlStack uses HttpURLConnection (HTTP/1.1). Go defaults
+	// to HTTP/2 over TLS; force HTTP/1.1 to match the app's transport.
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.ForceAttemptHTTP2 = false
+	tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+	return &Client{cfg: cfg, http: &http.Client{Timeout: 30 * time.Second, Transport: tr}}
 }
 
 func (c *Client) host() string {
@@ -68,9 +75,12 @@ func (c *Client) call(ctrl, act string, params map[string]string) (*Envelope, er
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+	req.Header.Set("User-Agent", c.userAgent())
+	// The app sends header names in lowercase (addHeader). Go's Header.Set
+	// canonicalizes to Title-Case; assign the map directly to keep them lowercase.
 	for k, v := range c.deviceHeaders(ctrl, act) {
-		req.Header.Set(k, v)
+		req.Header[k] = []string{v}
 	}
 
 	resp, err := c.http.Do(req)
@@ -98,6 +108,11 @@ func (c *Client) call(ctrl, act string, params map[string]string) (*Envelope, er
 // deviceHeaders builds the full header set: signing + device/version + auth token.
 func (c *Client) deviceHeaders(ctrl, act string) map[string]string {
 	d := c.cfg.Device.withDefaults()
+	// vs/vsn default to the reverse-engineered version but can be overridden
+	// (env wins over config) so the client can be bumped without recompiling
+	// when the server raises its minimum-version gate.
+	vs := firstNonEmpty(os.Getenv("QIANJI_VS"), c.cfg.VS, itoa(versionCode))
+	vsn := firstNonEmpty(os.Getenv("QIANJI_VSN"), c.cfg.VSN, versionName)
 	h := map[string]string{
 		"ctrl":           ctrl,
 		"act":            act,
@@ -107,9 +122,9 @@ func (c *Client) deviceHeaders(ctrl, act string) map[string]string {
 		"devbrand":       d.Brand,
 		"devname":        d.Name,
 		"devid":          ensureDevID(c.cfg),
-		"vs":             itoa(versionCode),
+		"vs":             vs,
 		"pkg":            pkg,
-		"vsn":            versionName,
+		"vsn":            vsn,
 		"timezoneoffset": d.TZOffset,
 		"clang":          d.Lang,
 		"cregion":        d.Region,
@@ -122,6 +137,29 @@ func (c *Client) deviceHeaders(ctrl, act string) map[string]string {
 		h["htoken"] = "1"
 	}
 	return h
+}
+
+// userAgent mimics the app's request fingerprint. Volley's HurlStack sets no
+// explicit User-Agent, so the app sends Android's default HttpURLConnection
+// agent (Dalvik/...); we reproduce that shape. Override via $QIANJI_UA or config.
+func (c *Client) userAgent() string {
+	if v := os.Getenv("QIANJI_UA"); v != "" {
+		return v
+	}
+	if c.cfg.UA != "" {
+		return c.cfg.UA
+	}
+	d := c.cfg.Device.withDefaults()
+	return "Dalvik/2.1.0 (Linux; U; Android 15; " + d.Name + " Build/AQ3A.240912.001)"
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func truncate(s string, n int) string {

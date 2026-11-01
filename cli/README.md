@@ -82,8 +82,8 @@ QIANJI_PASSWORD='你的密码' ./qianji login --account 13800000000
 
 ## 已验证 / 未验证
 
-- **已验证**：签名被服务器接受（`client/init`、`client/checkupdate` 返回 `ec:200`）。
-- **未验证**（需你的账号跑一次只读命令确认）：`login` 响应字段、各列表接口的返回结构、`syncv2/pull` 的分页字段名。先用 `qianji bills` / `qianji raw ...` 看真实 JSON，再据此细化字段映射。
+- **已验证**：登录 + 只读接口在真实账号上跑通——`login`、`books`、`assets`、`bills`、`client/init`（带登录态）均返回正常数据。
+- **关键坑（已修）**：服务器对带登录态的请求**大小写敏感地校验请求头**，头名必须全小写（`utoken` 而非 `Utoken`）。Go 的 `http.Header.Set` 会自动规范成首字母大写，导致所有鉴权接口返回 `当前版本太旧`，而免鉴权接口正常——极易误判成版本号或签名问题。本 CLI 直接写 `Header[name]` 绕过规范化。详见 [../docs/qianji-api.md](../docs/qianji-api.md)。
 - **暂未实现**：记账写入（`bill/syncall`）。写入要构造完整账单对象并走同步协议，风险高，放到下一轮，并会加二次确认和 dry-run。
 
 ## 后续：MCP
