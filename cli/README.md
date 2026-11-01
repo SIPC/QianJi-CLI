@@ -40,7 +40,7 @@ QIANJI_PASSWORD='你的密码' ./qianji login --account 13800000000
 ./qianji raw asset list status=1
 ```
 
-配置与 token 存放在 `~/.qianji/config.json`（文件权限 `0600`）。
+配置与 token 存放在**可执行文件同目录**下的 `.qianji-cli/config.json`（文件权限 `0600`）。工具是绿色便携的：配置跟着二进制走，换台机器把整个目录拷过去即可。
 
 ### 设备信息（重要）
 

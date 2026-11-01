@@ -65,7 +65,7 @@ Usage:
   qianji bills [--book <id>] [--pages N]    Pull bills (账单) and print JSON
   qianji raw <ctrl> <act> [key=value ...]   Signed call to any endpoint; prints JSON
 
-Config is stored at ~/.qianji/config.json (token has file mode 0600).
+Config is stored next to the executable in .qianji-cli/config.json (token has file mode 0600).
 `)
 }
 
@@ -138,7 +138,8 @@ func cmdLogin(cfg *Config, args []string) {
 	if err := saveConfig(cfg); err != nil {
 		fatal(err)
 	}
-	fmt.Printf("Logged in as %s (uid %s). Token saved to ~/.qianji/config.json\n", cfg.Name, cfg.UID)
+	p, _ := configPath()
+	fmt.Printf("Logged in as %s (uid %s). Token saved to %s\n", cfg.Name, cfg.UID, p)
 }
 
 func cmdLogout(cfg *Config) {

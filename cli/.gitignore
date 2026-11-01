@@ -1,3 +1,6 @@
 qianji.exe
 qianji
 /cli/qianji
+
+# Portable config/token dir created next to the binary at runtime
+.qianji-cli/

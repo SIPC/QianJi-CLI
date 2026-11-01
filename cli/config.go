@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-// Config is persisted at ~/.qianji/config.json after login.
+// Config is persisted in a .qianji-cli directory next to the executable after login.
 type Config struct {
 	Account string `json:"account"`
 	UID     string `json:"uid"`
@@ -56,12 +56,17 @@ func (d Device) withDefaults() Device {
 	}
 }
 
+// configPath returns the config location: a .qianji-cli directory next to the
+// executable, so the tool stays portable (config travels with the binary).
 func configPath() (string, error) {
-	home, err := os.UserHomeDir()
+	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".qianji", "config.json"), nil
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return filepath.Join(filepath.Dir(exe), ".qianji-cli", "config.json"), nil
 }
 
 func loadConfig() (*Config, error) {
