@@ -21,7 +21,7 @@
 
 调用之间有 3 秒节流（`auto_task_last_time`）。另有 `qianji://publicapi/entry`，未分析。
 
-## 私有 HTTP API
+## 钱迹 HTTP API
 
 - 主机：`https://api.qianjiapp.com/`，备用 `https://qianji.xxoojoke.com/`，海外 `https://qianjiga.litangkj.com/`
 - 路径：`<host><ctrl>/<act>`，表单参数，登录后带 `uid` 和 `fr`（都是用户 ID）

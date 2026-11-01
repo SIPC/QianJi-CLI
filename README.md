@@ -1,6 +1,6 @@
 # QianJi-CLI
 
-用你自己的账号调用钱迹（钱迹记账 / `com.mutangtech.qianji`）私有 API 的命令行工具，Go 编写，纯标准库，单文件分发。
+钱迹 CLI：用你自己的账号访问钱迹（钱迹记账 / `com.mutangtech.qianji`）数据的命令行工具，Go 编写，纯标准库，单文件分发。
 
 - 命令行工具与用法见 [cli/](cli/)
 - 接口分析（签名方案、账单模型、接口清单）见 [docs/qianji-api.md](docs/qianji-api.md)

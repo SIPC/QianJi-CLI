@@ -14,7 +14,7 @@ import (
 
 const defaultHost = "https://api.qianjiapp.com/"
 
-// Client performs signed requests against the Qianji private API.
+// Client performs signed requests against the Qianji API.
 type Client struct {
 	cfg  *Config
 	http *http.Client

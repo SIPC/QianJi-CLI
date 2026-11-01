@@ -1,4 +1,4 @@
-// Command qianji is a CLI for the Qianji (钱迹) private API, driven by your own account.
+// Command qianji is the Qianji (钱迹) CLI, driven by your own account.
 //
 // It signs requests exactly as the Android app does and talks to api.qianjiapp.com.
 // Use it only with your own credentials. Read commands are safe; write commands ask
@@ -55,7 +55,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `qianji %s — 钱迹 private API CLI (use your own account)
+	fmt.Fprintf(os.Stderr, `qianji %s — 钱迹 CLI (use your own account)
 
 Usage:
   qianji login [--account <a>] [--password <p>]  Log in; password also via $QIANJI_PASSWORD or prompt
