@@ -161,7 +161,9 @@ func cmdWhoami(cfg *Config) {
 
 func cmdBooks(cfg *Config) {
 	requireLogin(cfg)
-	env, err := newClient(cfg).call("book", "list", map[string]string{"t": "0"})
+	// t is a sync baseline (like lasttimes): 0 makes the server treat the client
+	// as up to date and return nothing; -1 forces a full list of books.
+	env, err := newClient(cfg).call("book", "list", map[string]string{"t": "-1"})
 	if err != nil {
 		fatal(err)
 	}
