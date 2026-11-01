@@ -28,7 +28,7 @@ qianji logout                            清除本地 token
 qianji books                             列出账本
 qianji assets                            列出资产账户
 qianji categories --book <id> [--type 0|1]  列出分类（0 支出 / 1 收入）
-qianji bills [--book <id>] [--pages N]   列出账单（最新在上；--book 按账本筛选；默认拉全部页）
+qianji bills [--book <id>] [--pages N] [--no-cache]  列出账单（最新在上，本地增量缓存，--book 按账本筛选）
 qianji raw <ctrl> <act> [key=value ...]  对任意接口发签名请求，打印 JSON
 qianji saving                            列出存钱计划
 qianji currency                          列出货币
@@ -50,7 +50,7 @@ QIANJI_PASSWORD='你的密码' ./qianji login --account 13800000000
 
 ### 账单与图片
 
-- `qianji bills` 拉回的 `changes` 就是账单明细（`id` / `money` / `time` / `type` / `cateid` / `assetid` / `descinfo` 等），`deletes` 是已删除账单的 id；游标分页由 `--pages N` 控制，到 `hasmore=0` 自动停。
+- `qianji bills` 默认**最新在上**，并维护本地增量缓存 `.qianji-cli/bills_<账本>.json`：首次全量拉取建立缓存，之后用服务器返回的 `lasttimes` 游标只拉新增/变更并合并，秒回（实测 1839 条：首次约 5.8s，之后约 0.6s）。账单明细字段有 `id` / `money` / `time` / `type` / `cateid` / `assetid` / `descinfo` 等，`deletes` 是已删除账单的 id。`--book` 按账本筛选；`--no-cache` 强制全量；`--raw` / `--json` 直接输出接口响应（不走缓存）。
 - 账单若带图片，账单对象会有 `images` 字段，是图片 id 数组（如 `["_eeaa93c4..."]`）。用 `qianji billimage <id>` 把 id 转成可直接下载的 URL：
 
 ```bash

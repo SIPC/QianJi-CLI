@@ -76,7 +76,7 @@ Usage:
   qianji books                              List account books (账本)
   qianji assets                             List assets (资产账户)
   qianji categories --book <id> [--type 0|1] List categories (支出/收入)
-  qianji bills [--book <id>] [--pages N]    Bills newest-first; --book filters 账本, default pulls all pages
+  qianji bills [--book <id>] [--pages N] [--no-cache]  Bills newest-first; local incremental cache; --book filters 账本
   qianji raw <ctrl> <act> [key=value ...]   Signed call to any endpoint; prints JSON
   qianji saving                             List saving plans (存钱计划)
   qianji currency                           List currencies (货币)
@@ -269,6 +269,7 @@ func cmdCategories(cfg *Config, args []string) {
 func cmdBills(cfg *Config, args []string) {
 	requireLogin(cfg)
 	book, maxPages := "-1", 0 // maxPages 0 = pull every page until hasmore=0
+	noCache := false
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--book":
@@ -281,14 +282,26 @@ func cmdBills(cfg *Config, args []string) {
 				fmt.Sscanf(args[i+1], "%d", &maxPages)
 				i++
 			}
+		case "--no-cache":
+			noCache = true
 		}
 	}
+	// Human mode keeps a local incremental cache so repeat runs only fetch what
+	// changed. raw/json want the actual responses and --no-cache forces a full
+	// pull, so those bypass the cache.
+	if outputMode == "raw" || outputMode == "json" || noCache {
+		cmdBillsDirect(cfg, book, maxPages)
+		return
+	}
+	cmdBillsSync(cfg, book, maxPages)
+}
+
+// cmdBillsDirect pulls pages straight from the API. syncv2/pull is cursor-paged
+// and returns bills in sync order (by update time/id), so to show the newest we
+// pull every page (until hasmore=0, or --pages N) and sort. raw/json print each
+// page's response; human accumulates and renders.
+func cmdBillsDirect(cfg *Config, book string, maxPages int) {
 	c := newClient(cfg)
-	// syncv2/pull is cursor-paged and returns bills in sync order (by update
-	// time/id), not by bill time — so to show the truly newest bills we must
-	// pull every page and sort. Each response carries the next page's
-	// pageoffset + pagesign and hasmore. By default pull until hasmore=0;
-	// --pages N caps the number of pages (0 = no cap).
 	pageoffset, pagesign := "0", "0"
 	var rows []billRow
 	deletes := 0
@@ -299,13 +312,9 @@ func cmdBills(cfg *Config, args []string) {
 			break
 		}
 		env, err := c.call("syncv2", "pull", map[string]string{
-			"bookid":     book,
-			"pageoffset": pageoffset,
-			"pagesign":   pagesign,
+			"bookid": book, "pageoffset": pageoffset, "pagesign": pagesign,
 		})
 		if err != nil {
-			// A full pull is many requests; if one page fails after we already
-			// have data, show what we got rather than discarding everything.
 			if len(rows) > 0 {
 				fmt.Fprintf(os.Stderr, "warning: stopped at page %d: %v\n", page, err)
 				truncated = true
@@ -335,6 +344,78 @@ func cmdBills(cfg *Config, args []string) {
 	}
 	if outputMode != "raw" && outputMode != "json" {
 		renderBillRows(rows, deletes, truncated)
+	}
+}
+
+// cmdBillsSync keeps a local cache (.qianji-cli/bills_<book>.json) and, via the
+// server's lasttimes cursor, pulls only what changed since last run. First run
+// is a full pull that builds the cache; later runs usually fetch 0–few bills.
+func cmdBillsSync(cfg *Config, book string, maxPages int) {
+	cache := loadBillsCache(book)
+	c := newClient(cfg)
+	lt := strings.TrimSpace(string(cache.LastTimes))
+	pageoffset, pagesign := "0", "0"
+	fetched := 0
+	for page := 0; ; page++ {
+		if maxPages > 0 && page >= maxPages {
+			break
+		}
+		params := map[string]string{"bookid": book, "pageoffset": pageoffset, "pagesign": pagesign}
+		if lt != "" && lt != "null" {
+			params["lasttimes"] = lt
+		}
+		env, err := c.call("syncv2", "pull", params)
+		if err != nil {
+			if len(cache.Bills) > 0 {
+				fmt.Fprintf(os.Stderr, "warning: sync stopped at page %d: %v\n", page, err)
+				break
+			}
+			fatal(err)
+		}
+		var p struct {
+			Changes   []json.RawMessage `json:"changes"`
+			Deletes   []int64           `json:"deletes"`
+			HasMore   int               `json:"hasmore"`
+			PageOff   int64             `json:"pageoffset"`
+			PageSign  string            `json:"pagesign"`
+			LastTimes json.RawMessage   `json:"lasttimes"`
+		}
+		if json.Unmarshal(env.Data, &p) != nil {
+			break
+		}
+		for _, ch := range p.Changes {
+			var idw struct {
+				ID json.Number `json:"id"`
+			}
+			if json.Unmarshal(ch, &idw) == nil && idw.ID != "" {
+				cache.Bills[idw.ID.String()] = ch
+			}
+		}
+		for _, d := range p.Deletes {
+			delete(cache.Bills, itoa(d))
+		}
+		fetched += len(p.Changes)
+		if len(p.LastTimes) > 0 && string(p.LastTimes) != "null" {
+			cache.LastTimes = p.LastTimes
+		}
+		if p.HasMore == 0 {
+			break
+		}
+		pageoffset, pagesign = itoa(p.PageOff), p.PageSign
+	}
+	if err := saveBillsCache(book, cache); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not save cache: %v\n", err)
+	}
+	rows := make([]billRow, 0, len(cache.Bills))
+	for _, ch := range cache.Bills {
+		var r billRow
+		if json.Unmarshal(ch, &r) == nil {
+			rows = append(rows, r)
+		}
+	}
+	renderBillRows(rows, 0, false)
+	if fetched > 0 {
+		fmt.Fprintf(os.Stderr, "（本次同步 %d 条变更）\n", fetched)
 	}
 }
 
