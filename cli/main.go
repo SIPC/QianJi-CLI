@@ -19,7 +19,7 @@ func main() {
 		os.Exit(2)
 	}
 	cmd := os.Args[1]
-	args := os.Args[2:]
+	args := parseOutputFlags(os.Args[2:])
 
 	cfg, err := loadConfig()
 	if err != nil {
@@ -46,15 +46,15 @@ func main() {
 	case "raw":
 		cmdRaw(cfg, args)
 	case "saving":
-		cmdSimpleList(cfg, "saving", "list")
+		cmdSimpleList(cfg, "saving", "list", nil)
 	case "currency":
-		cmdSimpleList(cfg, "currency", "listv2")
+		cmdSimpleList(cfg, "currency", "listv2", nil)
 	case "logins":
-		cmdSimpleList(cfg, "account", "loginrecords2")
+		cmdSimpleList(cfg, "account", "loginrecords2", renderLogins)
 	case "repeat":
-		cmdSimpleList(cfg, "repeat_task", "list")
+		cmdSimpleList(cfg, "repeat_task", "list", nil)
 	case "installment":
-		cmdSimpleList(cfg, "installment", "list")
+		cmdSimpleList(cfg, "installment", "list", nil)
 	case "billimage", "billimg":
 		cmdBillImage(cfg, args)
 	case "version", "--version", "-v":
@@ -89,6 +89,7 @@ Usage:
   qianji billimage <id>... [--size origin|md|small]  Bill image URL(s) from image ids
   qianji version                            Show CLI version
 
+Output: human-readable by default; add --json for pretty JSON, --raw for the raw response.
 Config is stored next to the executable in .qianji-cli/config.json (token has file mode 0600).
 `, cliVersion)
 }
@@ -205,16 +206,25 @@ func cmdMe(cfg *Config) {
 	if err != nil {
 		fatal(err)
 	}
+	if outputMode == "raw" {
+		os.Stdout.Write(env.Raw)
+		fmt.Println()
+		return
+	}
 	var wrap struct {
 		Config struct {
 			UserInfo json.RawMessage `json:"userinfo"`
 		} `json:"config"`
 	}
-	if json.Unmarshal(env.Data, &wrap) == nil && len(wrap.Config.UserInfo) > 0 {
-		printJSON(wrap.Config.UserInfo)
+	if json.Unmarshal(env.Data, &wrap) != nil || len(wrap.Config.UserInfo) == 0 {
+		printJSON(env.Data)
 		return
 	}
-	printJSON(env.Data)
+	if outputMode == "json" {
+		printJSON(wrap.Config.UserInfo)
+	} else {
+		renderMe(wrap.Config.UserInfo)
+	}
 }
 
 func cmdBooks(cfg *Config) {
@@ -225,7 +235,7 @@ func cmdBooks(cfg *Config) {
 	if err != nil {
 		fatal(err)
 	}
-	printJSON(env.Data)
+	emit(env, renderBooks)
 }
 
 func cmdAssets(cfg *Config) {
@@ -234,7 +244,7 @@ func cmdAssets(cfg *Config) {
 	if err != nil {
 		fatal(err)
 	}
-	printJSON(env.Data)
+	emit(env, renderAssets)
 }
 
 func cmdCategories(cfg *Config, args []string) {
@@ -262,7 +272,7 @@ func cmdCategories(cfg *Config, args []string) {
 	if err != nil {
 		fatal(err)
 	}
-	printJSON(env.Data)
+	emit(env, renderCategories)
 }
 
 func cmdBills(cfg *Config, args []string) {
@@ -297,8 +307,7 @@ func cmdBills(cfg *Config, args []string) {
 		if err != nil {
 			fatal(err)
 		}
-		fmt.Printf("// page %d\n", page)
-		printJSON(env.Data)
+		emit(env, renderBills)
 
 		var p struct {
 			HasMore    int    `json:"hasmore"`
@@ -327,17 +336,17 @@ func cmdRaw(cfg *Config, args []string) {
 	if err != nil {
 		fatal(err)
 	}
-	printJSON(env.Data)
+	emit(env, nil)
 }
 
 // cmdSimpleList calls a list endpoint that needs no extra params and prints its data.
-func cmdSimpleList(cfg *Config, ctrl, act string) {
+func cmdSimpleList(cfg *Config, ctrl, act string, render func(json.RawMessage)) {
 	requireLogin(cfg)
 	env, err := newClient(cfg).call(ctrl, act, map[string]string{})
 	if err != nil {
 		fatal(err)
 	}
-	printJSON(env.Data)
+	emit(env, render)
 }
 
 // cmdBillImage turns bill image ids (a bill's `images` field) into full URLs.

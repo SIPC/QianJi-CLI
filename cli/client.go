@@ -44,6 +44,7 @@ type Envelope struct {
 	EC   int             `json:"ec"`
 	EM   string          `json:"em"`
 	Data json.RawMessage `json:"data"`
+	Raw  []byte          `json:"-"` // untouched response body, for --raw
 }
 
 // APIError is returned when the server responds with ec != 200.
@@ -102,6 +103,7 @@ func (c *Client) call(ctrl, act string, params map[string]string) (*Envelope, er
 	if err := json.Unmarshal(body, &env); err != nil {
 		return nil, fmt.Errorf("decode response: %w (body: %s)", err, truncate(string(body), 300))
 	}
+	env.Raw = body
 	if env.EC != 200 {
 		return nil, &APIError{EC: env.EC, EM: env.EM}
 	}

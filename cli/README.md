@@ -65,6 +65,21 @@ qianji billimage _eeaa93c4790f4dcd9e16f62bc6109368 --size md  # 中图 640
 
 `qianji me` 显示线上资料（昵称、邮箱、性别、注册时间、VIP 类型/起止、微信绑定、头像 URL），数据取自 `vip/config` 的 `config.userinfo`，即 App「我的」页。头像 `avatar` 是完整 URL（`http://img.qianjiapp.com/<id>!qianjiwebp`），可直接访问。`whoami` 则只显示本地保存的登录态。
 
+### 输出格式
+
+所有查询命令默认输出**人类可读**格式——枚举（账单类型 / 状态、性别、会员等）、时间戳、金额都会转成人话。两个全局开关：
+
+- `--json`：美化后的 JSON（字段原样，便于脚本处理）
+- `--raw`：服务器返回的原始响应（含 `ec` / `em` / `data`，未加工）
+
+比如：
+
+- `qianji me` → 人读的昵称 / 邮箱 / 会员 / 头像
+- `qianji me --json` → 美化 JSON
+- `qianji bills --raw` → 原始响应
+
+默认人读已覆盖 `me` / `books` / `assets` / `bills` / `categories` / `logins`；其余命令人读模式暂回退为美化 JSON。
+
 ### 设备信息（重要）
 
 每个请求都带一组设备头：`devbrand`、`devname`、`devid`、`osvs`、`mk`、时区、语言、地区。钱迹服务器会**按设备记录登录**（App 内「账号与安全 → 登录记录」能看到），并支持远程移除某台设备的登录。
