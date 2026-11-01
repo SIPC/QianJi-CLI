@@ -70,9 +70,14 @@ func (d Device) withDefaults() Device {
 	}
 }
 
-// configPath returns the config location: a .qianji-cli directory next to the
-// executable, so the tool stays portable (config travels with the binary).
+// configPath returns the config location. By default a .qianji-cli directory
+// next to the executable (portable, travels with the binary). QIANJI_CONFIG_DIR
+// overrides the directory — used in Docker to point at a mounted volume so the
+// config and the bill/category caches persist across container restarts.
 func configPath() (string, error) {
+	if d := os.Getenv("QIANJI_CONFIG_DIR"); d != "" {
+		return filepath.Join(d, "config.json"), nil
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err

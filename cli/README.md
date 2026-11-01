@@ -144,14 +144,24 @@ QIANJI_MCP_PATH=你的一长串随机密钥 ./qianji mcp --addr :8787
 
 ## Docker
 
-[Dockerfile](../Dockerfile) 多阶段构建，产出 distroless 小镜像，容器里跑 MCP server；登录态用环境变量注入，不必挂配置文件：
+[Dockerfile](../Dockerfile) 多阶段构建，产出 distroless 小镜像跑 MCP server。配置和账单/分类缓存都落在容器里的 `/data`（`QIANJI_CONFIG_DIR=/data`），挂个卷就能持久化，登录一次即可反复用。
 
 ```bash
 docker build -t qianji-mcp .
 ```
 
+先登录一次（写进卷，密码用 env 避免回显）：
+
 ```bash
-docker run -d -p 8787:8787 -e QIANJI_UID=<你的uid> -e QIANJI_TOKEN=<你的token> -e QIANJI_MCP_PATH=<一长串随机密钥> qianji-mcp
+docker run --rm -it -v qianji-data:/data -e QIANJI_PASSWORD=你的密码 qianji-mcp login --account 你的账号
 ```
 
-`uid` / `token` 从本机登录后的 `.qianji-cli/config.json` 拿（或 `qianji me --json`）。容器 MCP 端点：`POST http://<host>:8787/mcp/<密钥>`。`loadConfig` 支持 `QIANJI_UID` / `QIANJI_TOKEN` / `QIANJI_HOST` 环境变量覆盖。
+再起 MCP server（复用卷里的登录态）：
+
+```bash
+docker run -d -p 8787:8787 -v qianji-data:/data -e QIANJI_MCP_PATH=一长串随机密钥 qianji-mcp
+```
+
+端点：`POST http://<host>:8787/mcp/<密钥>`。卷 `qianji-data` 里存着 `config.json` 和缓存，容器重建也不丢。
+
+> 备选（不挂卷）：直接用环境变量注入登录态 `-e QIANJI_UID=<uid> -e QIANJI_TOKEN=<token>`（`loadConfig` 也认 `QIANJI_HOST`），省掉 login 步骤，但每次都要给 token。
