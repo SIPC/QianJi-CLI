@@ -83,7 +83,7 @@ docker exec -it qianji qianji login --account 你的账号
 ## 发版
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0
+git tag v0.3.0 && git push origin v0.3.0
 ```
 
 [GitHub Actions](.github/workflows/release.yml) 会交叉编译 6 平台、从上个 tag 以来的提交生成更新日志、创建 Release 并上传压缩包 + 校验和；版本号由标签注入。
