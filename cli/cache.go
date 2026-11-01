@@ -128,3 +128,66 @@ func loadCategoryMap(cfg *Config, book string) map[int64]string {
 	}
 	return m
 }
+
+// syncBills runs an incremental pull into the local cache (via the server's
+// lasttimes cursor) and returns every cached bill (raw JSON) plus how many
+// changed this run. Shared by the CLI (cmdBillsSync) and the MCP server.
+func syncBills(cfg *Config, book string, maxPages int) ([]json.RawMessage, int, error) {
+	cache := loadBillsCache(book)
+	c := newClient(cfg)
+	lt := strings.TrimSpace(string(cache.LastTimes))
+	pageoffset, pagesign := "0", "0"
+	fetched := 0
+	for page := 0; ; page++ {
+		if maxPages > 0 && page >= maxPages {
+			break
+		}
+		params := map[string]string{"bookid": book, "pageoffset": pageoffset, "pagesign": pagesign}
+		if lt != "" && lt != "null" {
+			params["lasttimes"] = lt
+		}
+		env, err := c.call("syncv2", "pull", params)
+		if err != nil {
+			if len(cache.Bills) > 0 {
+				break // keep what we have on a mid-pull error
+			}
+			return nil, 0, err
+		}
+		var p struct {
+			Changes   []json.RawMessage `json:"changes"`
+			Deletes   []int64           `json:"deletes"`
+			HasMore   int               `json:"hasmore"`
+			PageOff   int64             `json:"pageoffset"`
+			PageSign  string            `json:"pagesign"`
+			LastTimes json.RawMessage   `json:"lasttimes"`
+		}
+		if json.Unmarshal(env.Data, &p) != nil {
+			break
+		}
+		for _, ch := range p.Changes {
+			var idw struct {
+				ID json.Number `json:"id"`
+			}
+			if json.Unmarshal(ch, &idw) == nil && idw.ID != "" {
+				cache.Bills[idw.ID.String()] = ch
+			}
+		}
+		for _, d := range p.Deletes {
+			delete(cache.Bills, itoa(d))
+		}
+		fetched += len(p.Changes)
+		if len(p.LastTimes) > 0 && string(p.LastTimes) != "null" {
+			cache.LastTimes = p.LastTimes
+		}
+		if p.HasMore == 0 {
+			break
+		}
+		pageoffset, pagesign = itoa(p.PageOff), p.PageSign
+	}
+	_ = saveBillsCache(book, cache)
+	out := make([]json.RawMessage, 0, len(cache.Bills))
+	for _, ch := range cache.Bills {
+		out = append(out, ch)
+	}
+	return out, fetched, nil
+}

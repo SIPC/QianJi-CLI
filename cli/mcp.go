@@ -1,0 +1,340 @@
+package main
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"sort"
+	"strconv"
+	"time"
+)
+
+// cmdMCP starts an HTTP MCP server. Auth is the secret path: requests must POST
+// to /mcp/<secret>; anything else 404s. Set $QIANJI_MCP_PATH to pin the secret,
+// otherwise a random one is generated and printed at startup.
+func cmdMCP(cfg *Config, args []string) {
+	requireLogin(cfg)
+	addr := ":8787"
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--addr" && i+1 < len(args) {
+			addr = args[i+1]
+			i++
+		}
+	}
+	secret := os.Getenv("QIANJI_MCP_PATH")
+	if secret == "" {
+		var b [32]byte
+		_, _ = rand.Read(b[:])
+		secret = hex.EncodeToString(b[:])
+	}
+	path := "/mcp/" + secret
+	mux := http.NewServeMux()
+	mux.HandleFunc(path, mcpHandler(cfg))
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	fmt.Fprintf(os.Stderr, "qianji MCP server on %s\n  endpoint: POST http://<host>%s\n  tools:    %d（读 + 写）\n  固定路径设 $QIANJI_MCP_PATH；否则每次启动随机生成\n", addr, path, len(mcpTools))
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		fatal(err)
+	}
+}
+
+type mcpTool struct {
+	Name, Desc string
+	Schema     map[string]any
+	Run        func(cfg *Config, a map[string]any) (string, error)
+}
+
+func mcpHandler(cfg *Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST only", http.StatusMethodNotAllowed)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+		if json.Unmarshal(body, &req) != nil {
+			rpcErr(w, nil, -32700, "parse error")
+			return
+		}
+		switch req.Method {
+		case "initialize":
+			rpcOK(w, req.ID, map[string]any{
+				"protocolVersion": "2024-11-05",
+				"capabilities":    map[string]any{"tools": map[string]any{}},
+				"serverInfo":      map[string]any{"name": "qianji", "version": cliVersion},
+			})
+		case "ping":
+			rpcOK(w, req.ID, map[string]any{})
+		case "notifications/initialized", "notifications/cancelled":
+			w.WriteHeader(http.StatusAccepted) // notifications take no response
+		case "tools/list":
+			tools := make([]map[string]any, 0, len(mcpTools))
+			for _, t := range mcpTools {
+				tools = append(tools, map[string]any{"name": t.Name, "description": t.Desc, "inputSchema": t.Schema})
+			}
+			rpcOK(w, req.ID, map[string]any{"tools": tools})
+		case "tools/call":
+			var p struct {
+				Name      string         `json:"name"`
+				Arguments map[string]any `json:"arguments"`
+			}
+			_ = json.Unmarshal(req.Params, &p)
+			for i := range mcpTools {
+				if mcpTools[i].Name != p.Name {
+					continue
+				}
+				out, err := mcpTools[i].Run(cfg, p.Arguments)
+				if err != nil {
+					rpcOK(w, req.ID, map[string]any{"content": []map[string]any{{"type": "text", "text": "error: " + err.Error()}}, "isError": true})
+					return
+				}
+				rpcOK(w, req.ID, map[string]any{"content": []map[string]any{{"type": "text", "text": out}}})
+				return
+			}
+			rpcErr(w, req.ID, -32602, "unknown tool: "+p.Name)
+		default:
+			rpcErr(w, req.ID, -32601, "method not found: "+req.Method)
+		}
+	}
+}
+
+func rpcOK(w http.ResponseWriter, id json.RawMessage, result any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
+}
+
+func rpcErr(w http.ResponseWriter, id json.RawMessage, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": code, "message": msg}})
+}
+
+// --- argument + schema helpers ---
+
+func aStr(a map[string]any, k, def string) string {
+	if v, ok := a[k].(string); ok && v != "" {
+		return v
+	}
+	return def
+}
+
+func aNum(a map[string]any, k string) (float64, bool) {
+	switch v := a[k].(type) {
+	case float64:
+		return v, true
+	case string:
+		if f, e := strconv.ParseFloat(v, 64); e == nil {
+			return f, true
+		}
+	}
+	return 0, false
+}
+
+func strProp(d string) map[string]any { return map[string]any{"type": "string", "description": d} }
+func numProp(d string) map[string]any { return map[string]any{"type": "number", "description": d} }
+
+func objSchema(props map[string]any, req ...string) map[string]any {
+	s := map[string]any{"type": "object", "properties": props}
+	if len(req) > 0 {
+		s["required"] = req
+	}
+	return s
+}
+
+func callData(cfg *Config, ctrl, act string, params map[string]string) (string, error) {
+	env, err := newClient(cfg).call(ctrl, act, params)
+	if err != nil {
+		return "", err
+	}
+	return string(env.Data), nil
+}
+
+var mcpTools = []mcpTool{
+	{"qianji_me", "当前用户资料：昵称/邮箱/性别/VIP/头像", objSchema(map[string]any{}), func(cfg *Config, a map[string]any) (string, error) {
+		env, err := newClient(cfg).call("vip", "config", map[string]string{})
+		if err != nil {
+			return "", err
+		}
+		var w struct {
+			Config struct {
+				UserInfo json.RawMessage `json:"userinfo"`
+			} `json:"config"`
+		}
+		if json.Unmarshal(env.Data, &w) == nil && len(w.Config.UserInfo) > 0 {
+			return string(w.Config.UserInfo), nil
+		}
+		return string(env.Data), nil
+	}},
+	{"qianji_books", "账本列表", objSchema(map[string]any{}), func(cfg *Config, a map[string]any) (string, error) {
+		return callData(cfg, "book", "list", map[string]string{"t": "-1"})
+	}},
+	{"qianji_assets", "资产账户列表（含余额）", objSchema(map[string]any{}), func(cfg *Config, a map[string]any) (string, error) {
+		return callData(cfg, "asset", "list", map[string]string{"status": "1"})
+	}},
+	{"qianji_categories", "分类列表（拿 cateid 用于记账/筛选）", objSchema(map[string]any{
+		"bookid": strProp("账本 id，默认 -1"),
+		"type":   strProp("0 支出 / 1 收入，默认 0"),
+	}), func(cfg *Config, a map[string]any) (string, error) {
+		return callData(cfg, "category", "listv2", map[string]string{"bookid": aStr(a, "bookid", "-1"), "t": aStr(a, "type", "0")})
+	}},
+	{"qianji_bills", "账单查询，按时间/类型/分类id/金额/关键词筛选，返回账单 JSON 数组（最新在前）", objSchema(map[string]any{
+		"bookid":  strProp("账本 id，默认 -1"),
+		"since":   strProp("起始日期 2006-01-02"),
+		"until":   strProp("结束日期（不含当天之后），2006-01-02"),
+		"type":    numProp("类型 0 支出 / 1 收入 / 2 转账 …"),
+		"cateid":  numProp("分类 id"),
+		"min":     numProp("最小金额"),
+		"max":     numProp("最大金额"),
+		"keyword": strProp("搜备注 / 来源 / 账户"),
+		"limit":   numProp("最多返回条数"),
+	}), billsToolRun},
+	{"qianji_saving", "存钱计划列表", objSchema(map[string]any{}), func(cfg *Config, a map[string]any) (string, error) {
+		return callData(cfg, "saving", "list", map[string]string{})
+	}},
+	{"qianji_currency", "货币列表与汇率", objSchema(map[string]any{}), func(cfg *Config, a map[string]any) (string, error) {
+		return callData(cfg, "currency", "listv2", map[string]string{})
+	}},
+	{"qianji_logins", "登录记录 / 设备", objSchema(map[string]any{}), func(cfg *Config, a map[string]any) (string, error) {
+		return callData(cfg, "account", "loginrecords2", map[string]string{})
+	}},
+	{"qianji_repeat", "周期记账任务", objSchema(map[string]any{}), func(cfg *Config, a map[string]any) (string, error) {
+		return callData(cfg, "repeat_task", "list", map[string]string{})
+	}},
+	{"qianji_add", "记一笔账单（直接写入真实账单，谨慎）", objSchema(map[string]any{
+		"type":    numProp("0 支出 / 1 收入 / 2 转账 …"),
+		"money":   numProp("金额，必须 > 0"),
+		"cateid":  numProp("分类 id（见 qianji_categories）"),
+		"assetid": numProp("资产 id（见 qianji_assets）"),
+		"bookid":  numProp("账本 id，默认 -1"),
+		"remark":  strProp("备注"),
+		"time":    strProp("时间 2006-01-02 15:04，默认现在"),
+	}, "type", "money", "cateid", "assetid"), addToolRun},
+	{"qianji_del", "按 id 删除账单（直接删除真实账单，谨慎）", objSchema(map[string]any{
+		"billid": numProp("账单 id"),
+	}, "billid"), delToolRun},
+	{"qianji_raw", "对任意签名接口发请求（高级）", objSchema(map[string]any{
+		"ctrl":   strProp("控制器，如 book"),
+		"act":    strProp("动作，如 list"),
+		"params": map[string]any{"type": "object", "description": "表单参数键值对"},
+	}, "ctrl", "act"), rawToolRun},
+}
+
+func billsToolRun(cfg *Config, a map[string]any) (string, error) {
+	book := aStr(a, "bookid", "-1")
+	raws, _, err := syncBills(cfg, book, 0)
+	if err != nil {
+		return "", err
+	}
+	f := &billFilter{typ: -1}
+	if v, ok := aNum(a, "type"); ok {
+		f.typ = int(v)
+	}
+	if v, ok := aNum(a, "cateid"); ok {
+		f.cate = int64(v)
+	}
+	if v, ok := aNum(a, "min"); ok {
+		f.min, f.hasMin = v, true
+	}
+	if v, ok := aNum(a, "max"); ok {
+		f.max = v
+	}
+	if s := aStr(a, "since", ""); s != "" {
+		if t, e := parseBillTime(s); e == nil {
+			f.since = t.Unix()
+		}
+	}
+	if s := aStr(a, "until", ""); s != "" {
+		if t, e := parseBillTime(s); e == nil {
+			if t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 {
+				t = t.Add(24 * time.Hour)
+			}
+			f.until = t.Unix()
+		}
+	}
+	f.keyword = aStr(a, "keyword", "")
+	if v, ok := aNum(a, "limit"); ok {
+		f.limit = int(v)
+	}
+	type rawTimed struct {
+		t   int64
+		raw json.RawMessage
+	}
+	var kept []rawTimed
+	for _, ch := range raws {
+		var r billRow
+		if json.Unmarshal(ch, &r) != nil {
+			continue
+		}
+		if f.match(r) {
+			kept = append(kept, rawTimed{r.Time, ch})
+		}
+	}
+	sort.SliceStable(kept, func(i, j int) bool { return kept[i].t > kept[j].t })
+	if f.limit > 0 && len(kept) > f.limit {
+		kept = kept[:f.limit]
+	}
+	out := make([]json.RawMessage, len(kept))
+	for i := range kept {
+		out[i] = kept[i].raw
+	}
+	b, _ := json.Marshal(out)
+	return string(b), nil
+}
+
+func addToolRun(cfg *Config, a map[string]any) (string, error) {
+	typ, ok1 := aNum(a, "type")
+	moneyV, ok2 := aNum(a, "money")
+	cate, ok3 := aNum(a, "cateid")
+	asset, ok4 := aNum(a, "assetid")
+	if !ok1 || !ok2 || !ok3 || !ok4 {
+		return "", fmt.Errorf("type/money/cateid/assetid 为必填数字")
+	}
+	if moneyV <= 0 {
+		return "", fmt.Errorf("money 必须 > 0")
+	}
+	book := int64(-1)
+	if v, ok := aNum(a, "bookid"); ok {
+		book = int64(v)
+	}
+	t := time.Now()
+	if s := aStr(a, "time", ""); s != "" {
+		if pt, e := parseBillTime(s); e == nil {
+			t = pt
+		}
+	}
+	bill, id := buildBillPayload(cfg, int(typ), moneyV, int64(cate), int64(asset), book, aStr(a, "remark", ""), t)
+	data, err := submitBills(cfg, []any{bill}, []any{})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`{"id":%d,"result":%s}`, id, data), nil
+}
+
+func delToolRun(cfg *Config, a map[string]any) (string, error) {
+	v, ok := aNum(a, "billid")
+	if !ok {
+		return "", fmt.Errorf("billid 为必填数字")
+	}
+	return submitBills(cfg, []any{}, []any{int64(v)})
+}
+
+func rawToolRun(cfg *Config, a map[string]any) (string, error) {
+	ctrl := aStr(a, "ctrl", "")
+	act := aStr(a, "act", "")
+	if ctrl == "" || act == "" {
+		return "", fmt.Errorf("ctrl/act 为必填")
+	}
+	params := map[string]string{}
+	if pm, ok := a["params"].(map[string]any); ok {
+		for k, val := range pm {
+			params[k] = fmt.Sprint(val)
+		}
+	}
+	return callData(cfg, ctrl, act, params)
+}

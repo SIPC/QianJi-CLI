@@ -48,6 +48,8 @@ func main() {
 		cmdAdd(cfg, args)
 	case "del", "delete":
 		cmdDel(cfg, args)
+	case "mcp":
+		cmdMCP(cfg, args)
 	case "saving":
 		cmdSimpleList(cfg, "saving", "list", renderSaving)
 	case "currency":
@@ -87,6 +89,7 @@ Usage:
   qianji add --type <t> --money <m> --cate <id> --asset <id> [--book <id>] [--remark <s>] [--time <ts>] [--confirm]
                                             Write one bill (dry-run unless --confirm)
   qianji del <billid>... [--confirm]        Delete bill(s) by id (dry-run unless --confirm)
+  qianji mcp [--addr :8787]                 Start an MCP server (HTTP, secret path) exposing the tools
   qianji saving                             List saving plans (存钱计划)
   qianji currency                           List currencies (货币)
   qianji logins                             List login records / devices (登录记录)
@@ -428,63 +431,12 @@ func cmdBillsDirect(cfg *Config, book string, maxPages int, f *billFilter) {
 // server's lasttimes cursor, pulls only what changed since last run. First run
 // is a full pull that builds the cache; later runs usually fetch 0–few bills.
 func cmdBillsSync(cfg *Config, book string, maxPages int, f *billFilter) {
-	cache := loadBillsCache(book)
-	c := newClient(cfg)
-	lt := strings.TrimSpace(string(cache.LastTimes))
-	pageoffset, pagesign := "0", "0"
-	fetched := 0
-	for page := 0; ; page++ {
-		if maxPages > 0 && page >= maxPages {
-			break
-		}
-		params := map[string]string{"bookid": book, "pageoffset": pageoffset, "pagesign": pagesign}
-		if lt != "" && lt != "null" {
-			params["lasttimes"] = lt
-		}
-		env, err := c.call("syncv2", "pull", params)
-		if err != nil {
-			if len(cache.Bills) > 0 {
-				fmt.Fprintf(os.Stderr, "warning: sync stopped at page %d: %v\n", page, err)
-				break
-			}
-			fatal(err)
-		}
-		var p struct {
-			Changes   []json.RawMessage `json:"changes"`
-			Deletes   []int64           `json:"deletes"`
-			HasMore   int               `json:"hasmore"`
-			PageOff   int64             `json:"pageoffset"`
-			PageSign  string            `json:"pagesign"`
-			LastTimes json.RawMessage   `json:"lasttimes"`
-		}
-		if json.Unmarshal(env.Data, &p) != nil {
-			break
-		}
-		for _, ch := range p.Changes {
-			var idw struct {
-				ID json.Number `json:"id"`
-			}
-			if json.Unmarshal(ch, &idw) == nil && idw.ID != "" {
-				cache.Bills[idw.ID.String()] = ch
-			}
-		}
-		for _, d := range p.Deletes {
-			delete(cache.Bills, itoa(d))
-		}
-		fetched += len(p.Changes)
-		if len(p.LastTimes) > 0 && string(p.LastTimes) != "null" {
-			cache.LastTimes = p.LastTimes
-		}
-		if p.HasMore == 0 {
-			break
-		}
-		pageoffset, pagesign = itoa(p.PageOff), p.PageSign
+	raws, fetched, err := syncBills(cfg, book, maxPages)
+	if err != nil {
+		fatal(err)
 	}
-	if err := saveBillsCache(book, cache); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not save cache: %v\n", err)
-	}
-	rows := make([]billRow, 0, len(cache.Bills))
-	for _, ch := range cache.Bills {
+	rows := make([]billRow, 0, len(raws))
+	for _, ch := range raws {
 		var r billRow
 		if json.Unmarshal(ch, &r) == nil {
 			rows = append(rows, r)

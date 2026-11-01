@@ -97,31 +97,8 @@ func cmdAdd(cfg *Config, args []string) {
 		}
 		t = parsed
 	}
-	now := time.Now()
-	// Bill id in the real data is unix-millis * 10000 + a 4-digit serial.
-	id := now.UnixMilli()*10000 + int64(now.Nanosecond()/1e5%10000)
-
-	bill := map[string]any{
-		"id":         id,
-		"userid":     cfg.UID,
-		"bookid":     bookID,
-		"time":       t.Unix(),
-		"type":       typeInt,
-		"money":      moneyF,
-		"cateid":     cateID,
-		"assetid":    assetID,
-		"remark":     remark,
-		"status":     2, // 2 = not-yet-synced; server treats it as a new bill
-		"createtime": now.Unix(),
-		"updatetime": now.Unix(),
-		"platform":   0, // manual
-	}
-	inner := map[string]any{
-		"changelist": []any{bill},
-		"dellist":    []any{},
-	}
-	v := map[string]any{billSyncKey: inner}
-	vb, _ := json.Marshal(v)
+	bill, id := buildBillPayload(cfg, typeInt, moneyF, cateID, assetID, bookID, remark, t)
+	vb, _ := json.Marshal(map[string]any{billSyncKey: map[string]any{"changelist": []any{bill}, "dellist": []any{}}})
 
 	summary := fmt.Sprintf("%s %.2f  分类 %d  资产 %d  账本 %d  %s  备注 %q",
 		billType(typeInt), moneyF, cateID, assetID, bookID, t.Format("2006-01-02 15:04"), remark)
@@ -139,12 +116,45 @@ func cmdAdd(cfg *Config, args []string) {
 		fmt.Fprintln(os.Stderr, "已取消，未写入。")
 		return
 	}
-	env, err := newClient(cfg).call("bill", "syncall", map[string]string{"v": string(vb)})
+	data, err := submitBills(cfg, []any{bill}, []any{})
 	if err != nil {
 		fatal(err)
 	}
 	fmt.Fprintf(os.Stderr, "已写入，账单 id：%d（如需撤销：qianji del %d --confirm）\n服务器返回：\n", id, id)
-	printJSON(env.Data)
+	printJSON([]byte(data))
+}
+
+// buildBillPayload builds a bill object for bill/syncall's changelist and its
+// generated id. status=2 (unsynced) makes the server insert it as new.
+func buildBillPayload(cfg *Config, typeInt int, moneyF float64, cateID, assetID, bookID int64, remark string, t time.Time) (map[string]any, int64) {
+	now := time.Now()
+	id := now.UnixMilli()*10000 + int64(now.Nanosecond()/1e5%10000)
+	return map[string]any{
+		"id":         id,
+		"userid":     cfg.UID,
+		"bookid":     bookID,
+		"time":       t.Unix(),
+		"type":       typeInt,
+		"money":      moneyF,
+		"cateid":     cateID,
+		"assetid":    assetID,
+		"remark":     remark,
+		"status":     2,
+		"createtime": now.Unix(),
+		"updatetime": now.Unix(),
+		"platform":   0,
+	}, id
+}
+
+// submitBills posts a changelist/dellist to bill/syncall and returns the raw
+// data JSON. Shared by add/del and the MCP server.
+func submitBills(cfg *Config, changelist, dellist []any) (string, error) {
+	vb, _ := json.Marshal(map[string]any{billSyncKey: map[string]any{"changelist": changelist, "dellist": dellist}})
+	env, err := newClient(cfg).call("bill", "syncall", map[string]string{"v": string(vb)})
+	if err != nil {
+		return "", err
+	}
+	return string(env.Data), nil
 }
 
 // mustDate parses a date/time for filters, exiting on error.
@@ -204,8 +214,7 @@ func cmdDel(cfg *Config, args []string) {
 		}
 		dellist = append(dellist, n)
 	}
-	v := map[string]any{billSyncKey: map[string]any{"changelist": []any{}, "dellist": dellist}}
-	vb, _ := json.Marshal(v)
+	vb, _ := json.Marshal(map[string]any{billSyncKey: map[string]any{"changelist": []any{}, "dellist": dellist}})
 
 	if !confirm {
 		fmt.Fprintln(os.Stderr, "DRY-RUN（不会删除）。将提交的 v：")
@@ -219,10 +228,10 @@ func cmdDel(cfg *Config, args []string) {
 		fmt.Fprintln(os.Stderr, "已取消，未删除。")
 		return
 	}
-	env, err := newClient(cfg).call("bill", "syncall", map[string]string{"v": string(vb)})
+	data, err := submitBills(cfg, []any{}, dellist)
 	if err != nil {
 		fatal(err)
 	}
 	fmt.Fprintln(os.Stderr, "已提交。服务器返回：")
-	printJSON(env.Data)
+	printJSON([]byte(data))
 }

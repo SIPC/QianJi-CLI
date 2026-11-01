@@ -129,6 +129,29 @@ qianji billimage _eeaa93c4790f4dcd9e16f62bc6109368 --size md  # 中图 640
 - **写入（已实现并实测通过，默认 dry-run + 二次确认）**：`add` 记一笔、`del` 删账单，走 `bill/syncall`（`v = {"bills": {changelist:[账单], dellist:[billid]}}`，新账单 `status=2`、17 位 id、带 `updatetime`）。命令默认只打印将发送的 `v`，`--confirm` 并输入 `yes` 才真正写入；已在真实账号验证 add 写入 / del 删除往返成功。
 - **仍待做**：预算设置（`budget/submitv2`）、预算查询（`budget/list`，需账本 `range` + `DateFilter`）。
 
-## 后续：MCP
+## MCP server
 
-CLI 的签名与请求层（`sign.go` / `client.go`）与界面解耦，后续可直接在其上包一层 MCP server，把 `books`/`assets`/`bills`/`raw` 暴露为工具。
+`qianji mcp` 启动一个 HTTP MCP server，把查询和写入包成 MCP 工具（`qianji_me` / `books` / `assets` / `categories` / `bills` / `saving` / `currency` / `logins` / `repeat` / `add` / `del` / `raw`），供支持 MCP 的客户端调用。纯标准库手写 JSON-RPC 2.0（`initialize` / `tools/list` / `tools/call`）。
+
+- **认证 = 密钥路径**：端点是 `/mcp/<密钥>`，只有 POST 到正确密钥路径才响应，其它一律 404。用 `$QIANJI_MCP_PATH` 固定密钥，留空则每次启动随机生成并打印。
+
+```bash
+QIANJI_MCP_PATH=你的一长串随机密钥 ./qianji mcp --addr :8787
+# 端点： POST http://localhost:8787/mcp/你的一长串随机密钥
+```
+
+> ⚠️ 工具含写入（`add` / `del`），能改你的真实账单。密钥路径是唯一防线——别把带密钥的完整 URL 泄露出去，对公网建议再加 HTTPS 反代。
+
+## Docker
+
+[Dockerfile](../Dockerfile) 多阶段构建，产出 distroless 小镜像，容器里跑 MCP server；登录态用环境变量注入，不必挂配置文件：
+
+```bash
+docker build -t qianji-mcp .
+```
+
+```bash
+docker run -d -p 8787:8787 -e QIANJI_UID=<你的uid> -e QIANJI_TOKEN=<你的token> -e QIANJI_MCP_PATH=<一长串随机密钥> qianji-mcp
+```
+
+`uid` / `token` 从本机登录后的 `.qianji-cli/config.json` 拿（或 `qianji me --json`）。容器 MCP 端点：`POST http://<host>:8787/mcp/<密钥>`。`loadConfig` 支持 `QIANJI_UID` / `QIANJI_TOKEN` / `QIANJI_HOST` 环境变量覆盖。

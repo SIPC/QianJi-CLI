@@ -84,22 +84,29 @@ func configPath() (string, error) {
 }
 
 func loadConfig() (*Config, error) {
-	p, err := configPath()
-	if err != nil {
-		return nil, err
-	}
-	b, err := os.ReadFile(p)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return &Config{}, nil
+	c := &Config{}
+	if p, err := configPath(); err == nil {
+		b, rerr := os.ReadFile(p)
+		if rerr == nil {
+			if err := json.Unmarshal(b, c); err != nil {
+				return nil, err
+			}
+		} else if !errors.Is(rerr, os.ErrNotExist) {
+			return nil, rerr
 		}
-		return nil, err
 	}
-	var c Config
-	if err := json.Unmarshal(b, &c); err != nil {
-		return nil, err
+	// Env overrides let a container inject the login without a config file:
+	//   QIANJI_UID / QIANJI_TOKEN / QIANJI_HOST.
+	if v := os.Getenv("QIANJI_UID"); v != "" {
+		c.UID = v
 	}
-	return &c, nil
+	if v := os.Getenv("QIANJI_TOKEN"); v != "" {
+		c.Token = v
+	}
+	if v := os.Getenv("QIANJI_HOST"); v != "" {
+		c.Host = v
+	}
+	return c, nil
 }
 
 func saveConfig(c *Config) error {
