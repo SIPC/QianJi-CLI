@@ -31,7 +31,7 @@
 - **请求头名必须全小写**：服务器对带登录态（`utoken`）的请求大小写敏感地校验请求头，`utoken` 不能写成 `Utoken`，否则返回 `ec:8888 当前版本太旧`。免鉴权接口（`client/init` 等）不校验，容易误判成版本或签名问题。注意 Go 的 `http.Header.Set` 会把头名规范成首字母大写，需直接写 `Header[name]` 绕过。
 - Content-Type 为 `application/x-www-form-urlencoded; charset=UTF-8`；传输走 HTTP/1.1（App 的 Volley HurlStack 基于 HttpURLConnection）
 - 账单拉取：`syncv2/pull`，分页参数 `pageoffset`、`pagesign`，增量参数 `lasttimes`（JSON）
-- 账单写入：`bill/syncall`，`v` 形如 `{<key>: {changelist: [...], dellist: [...]}}`（`key` 未确认）
+- 账单写入：`bill/syncall`，`v = {<登录uid>: {changelist: [账单], dellist: [billid]}}`（外层 key 为 `getLoginUserID()`）。账单对象 = `Bill.toSyncJson()`：对象 gson 序列化后移除 `category`/`fromact`/`targetact`/`paytype`/`bookname`，剩余字段同 `syncv2/pull` 的 changes（`id`/`userid`/`bookid`/`time`/`type`/`money`/`cateid`/`assetid`/`remark`/`status`/`createtime`/`platform` 等）；新账单 `id` 形如 unix 毫秒 × 1000 + 序列。删除只需把 billid 放进 `dellist`。
 - 用户资料：`vip/config` 返回的 `config.userinfo` 是当前用户信息（`avatar`/`name`/`email`/`gender`/`platform`/`viptype`/`vipstart`/`vipend`/`weixinid` 等），即 App「我的」页的数据源
 - 会员类型（`viptype`，名称见 `vip/config.types` 的 `name2`）：`2` 月度会员、`3` 半年会员、`4` 年度会员、`100` 终身会员
 

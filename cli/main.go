@@ -43,6 +43,10 @@ func main() {
 		cmdBills(cfg, args)
 	case "raw":
 		cmdRaw(cfg, args)
+	case "add":
+		cmdAdd(cfg, args)
+	case "del", "delete":
+		cmdDel(cfg, args)
 	case "saving":
 		cmdSimpleList(cfg, "saving", "list", renderSaving)
 	case "currency":
@@ -78,6 +82,9 @@ Usage:
   qianji categories --book <id> [--type 0|1] List categories (支出/收入)
   qianji bills [--book <id>] [--pages N] [--no-cache]  Bills newest-first; local incremental cache; --book filters 账本
   qianji raw <ctrl> <act> [key=value ...]   Signed call to any endpoint; prints JSON
+  qianji add --type <t> --money <m> --cate <id> --asset <id> [--book <id>] [--remark <s>] [--time <ts>] [--confirm]
+                                            Write one bill (dry-run unless --confirm)
+  qianji del <billid>... [--confirm]        Delete bill(s) by id (dry-run unless --confirm)
   qianji saving                             List saving plans (存钱计划)
   qianji currency                           List currencies (货币)
   qianji logins                             List login records / devices (登录记录)
