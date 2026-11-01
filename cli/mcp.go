@@ -51,8 +51,17 @@ type mcpTool struct {
 
 func mcpHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		switch r.Method {
+		case http.MethodGet:
+			serveSSE(w, r) // Streamable HTTP: open a server->client SSE stream
+			return
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusOK) // session teardown (we're stateless)
+			return
+		case http.MethodPost:
+			// handled below
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		body, _ := io.ReadAll(r.Body)
@@ -67,8 +76,17 @@ func mcpHandler() http.HandlerFunc {
 		}
 		switch req.Method {
 		case "initialize":
+			var ip struct {
+				ProtocolVersion string `json:"protocolVersion"`
+			}
+			_ = json.Unmarshal(req.Params, &ip)
+			pv := ip.ProtocolVersion // echo the client's version for compatibility
+			if pv == "" {
+				pv = "2025-06-18"
+			}
+			w.Header().Set("Mcp-Session-Id", newSessionID())
 			rpcOK(w, req.ID, map[string]any{
-				"protocolVersion": "2024-11-05",
+				"protocolVersion": pv,
 				"capabilities":    map[string]any{"tools": map[string]any{}},
 				"serverInfo":      map[string]any{"name": "qianji", "version": cliVersion},
 			})
@@ -120,6 +138,42 @@ func rpcOK(w http.ResponseWriter, id json.RawMessage, result any) {
 func rpcErr(w http.ResponseWriter, id json.RawMessage, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": code, "message": msg}})
+}
+
+// serveSSE opens a Streamable-HTTP server->client stream. We don't push
+// server-initiated messages, so it just keeps the connection alive with pings
+// until the client disconnects — enough for clients that open a GET stream.
+func serveSSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, ": connected\n\n")
+	flusher.Flush()
+	tick := time.NewTicker(25 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-tick.C:
+			if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+func newSessionID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 // --- argument + schema helpers ---
