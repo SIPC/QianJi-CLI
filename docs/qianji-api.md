@@ -33,6 +33,7 @@
 - 账单拉取：`syncv2/pull`，分页参数 `pageoffset`、`pagesign`，增量参数 `lasttimes`（JSON）
 - 账单写入：`bill/syncall`，`v` 形如 `{<key>: {changelist: [...], dellist: [...]}}`（`key` 未确认）
 - 用户资料：`vip/config` 返回的 `config.userinfo` 是当前用户信息（`avatar`/`name`/`email`/`gender`/`platform`/`viptype`/`vipstart`/`vipend`/`weixinid` 等），即 App「我的」页的数据源
+- 会员类型（`viptype`，名称见 `vip/config.types` 的 `name2`）：`2` 月度会员、`3` 半年会员、`4` 年度会员、`100` 终身会员
 
 ## 账单模型
 

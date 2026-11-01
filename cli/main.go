@@ -31,9 +31,7 @@ func main() {
 		cmdLogin(cfg, args)
 	case "logout":
 		cmdLogout(cfg)
-	case "whoami":
-		cmdWhoami(cfg)
-	case "me", "profile":
+	case "me", "profile", "whoami":
 		cmdMe(cfg)
 	case "books":
 		cmdBooks(cfg)
@@ -46,15 +44,15 @@ func main() {
 	case "raw":
 		cmdRaw(cfg, args)
 	case "saving":
-		cmdSimpleList(cfg, "saving", "list", nil)
+		cmdSimpleList(cfg, "saving", "list", renderSaving)
 	case "currency":
-		cmdSimpleList(cfg, "currency", "listv2", nil)
+		cmdSimpleList(cfg, "currency", "listv2", renderCurrency)
 	case "logins":
 		cmdSimpleList(cfg, "account", "loginrecords2", renderLogins)
 	case "repeat":
-		cmdSimpleList(cfg, "repeat_task", "list", nil)
+		cmdSimpleList(cfg, "repeat_task", "list", renderRepeat)
 	case "installment":
-		cmdSimpleList(cfg, "installment", "list", nil)
+		cmdSimpleList(cfg, "installment", "list", renderInstallment)
 	case "billimage", "billimg":
 		cmdBillImage(cfg, args)
 	case "version", "--version", "-v":
@@ -73,13 +71,12 @@ func usage() {
 
 Usage:
   qianji login [--account <a>] [--password <p>]  Log in; password also via $QIANJI_PASSWORD or prompt
-  qianji whoami                             Show the locally saved login (account/uid/token)
-  qianji me                                 Show your online profile (name/email/VIP/avatar)
+  qianji me                                 Your profile: name/email/VIP/avatar + local token
   qianji logout                             Forget the saved token
   qianji books                              List account books (账本)
   qianji assets                             List assets (资产账户)
   qianji categories --book <id> [--type 0|1] List categories (支出/收入)
-  qianji bills [--book <id>] [--pages N]    Pull bills (账单) and print JSON
+  qianji bills [--book <id>] [--pages N]    Bills newest-first; --book filters 账本, default pulls all pages
   qianji raw <ctrl> <act> [key=value ...]   Signed call to any endpoint; prints JSON
   qianji saving                             List saving plans (存钱计划)
   qianji currency                           List currencies (货币)
@@ -189,17 +186,8 @@ func cmdLogout(cfg *Config) {
 	fmt.Println("Logged out (token cleared).")
 }
 
-func cmdWhoami(cfg *Config) {
-	if cfg.UID == "" {
-		fmt.Println("Not logged in.")
-		return
-	}
-	fmt.Printf("account: %s\nname:    %s\nuid:     %s\ntoken:   %s\n",
-		cfg.Account, cfg.Name, cfg.UID, mask(cfg.Token))
-}
-
 // cmdMe prints the online user profile — name, email, gender, VIP, and the
-// avatar URL. The app reads this from vip/config under config.userinfo.
+// avatar URL (from vip/config.userinfo), plus the local token (merged whoami).
 func cmdMe(cfg *Config) {
 	requireLogin(cfg)
 	env, err := newClient(cfg).call("vip", "config", map[string]string{})
@@ -224,6 +212,9 @@ func cmdMe(cfg *Config) {
 		printJSON(wrap.Config.UserInfo)
 	} else {
 		renderMe(wrap.Config.UserInfo)
+		if cfg.Token != "" {
+			fmt.Printf("token: %s（本地）\n", mask(cfg.Token))
+		}
 	}
 }
 
@@ -277,7 +268,7 @@ func cmdCategories(cfg *Config, args []string) {
 
 func cmdBills(cfg *Config, args []string) {
 	requireLogin(cfg)
-	book, maxPages := "-1", 1
+	book, maxPages := "-1", 0 // maxPages 0 = pull every page until hasmore=0
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--book":
@@ -293,31 +284,57 @@ func cmdBills(cfg *Config, args []string) {
 		}
 	}
 	c := newClient(cfg)
-	// syncv2/pull is cursor-paged: the first call uses pageoffset=0/pagesign=0,
-	// and each response carries the next page's pageoffset + pagesign and a
-	// hasmore flag. Follow the cursor rather than guessing offsets, and stop
-	// early when hasmore=0. --pages caps how many pages to pull at most.
+	// syncv2/pull is cursor-paged and returns bills in sync order (by update
+	// time/id), not by bill time — so to show the truly newest bills we must
+	// pull every page and sort. Each response carries the next page's
+	// pageoffset + pagesign and hasmore. By default pull until hasmore=0;
+	// --pages N caps the number of pages (0 = no cap).
 	pageoffset, pagesign := "0", "0"
-	for page := 0; page < maxPages; page++ {
+	var rows []billRow
+	deletes := 0
+	truncated := false
+	for page := 0; ; page++ {
+		if maxPages > 0 && page >= maxPages {
+			truncated = true
+			break
+		}
 		env, err := c.call("syncv2", "pull", map[string]string{
 			"bookid":     book,
 			"pageoffset": pageoffset,
 			"pagesign":   pagesign,
 		})
 		if err != nil {
+			// A full pull is many requests; if one page fails after we already
+			// have data, show what we got rather than discarding everything.
+			if len(rows) > 0 {
+				fmt.Fprintf(os.Stderr, "warning: stopped at page %d: %v\n", page, err)
+				truncated = true
+				break
+			}
 			fatal(err)
 		}
-		emit(env, renderBills)
-
-		var p struct {
-			HasMore    int    `json:"hasmore"`
-			PageOffset int64  `json:"pageoffset"`
-			PageSign   string `json:"pagesign"`
+		if outputMode == "raw" || outputMode == "json" {
+			emit(env, nil)
 		}
-		if json.Unmarshal(env.Data, &p) != nil || p.HasMore == 0 {
+		var p struct {
+			Changes    []billRow `json:"changes"`
+			Deletes    []int64   `json:"deletes"`
+			HasMore    int       `json:"hasmore"`
+			PageOffset int64     `json:"pageoffset"`
+			PageSign   string    `json:"pagesign"`
+		}
+		if json.Unmarshal(env.Data, &p) != nil {
+			break
+		}
+		rows = append(rows, p.Changes...)
+		deletes += len(p.Deletes)
+		if p.HasMore == 0 {
 			break
 		}
 		pageoffset, pagesign = itoa(p.PageOffset), p.PageSign
+	}
+	if outputMode != "raw" && outputMode != "json" {
+		renderBillRows(rows, deletes, truncated)
 	}
 }
 

@@ -23,13 +23,12 @@ GOOS=darwin  GOARCH=arm64 go build -o qianji .
 
 ```
 qianji login [--account <手机号/邮箱>] [--password <密码>]  登录；密码也可取自 $QIANJI_PASSWORD，否则交互输入
-qianji whoami                            显示本地登录态（account/uid/token）
-qianji me                                显示线上用户资料（昵称/邮箱/VIP/头像）
+qianji me                                显示用户资料（昵称/邮箱/VIP/头像 + 本地 token；whoami 为其别名）
 qianji logout                            清除本地 token
 qianji books                             列出账本
 qianji assets                            列出资产账户
 qianji categories --book <id> [--type 0|1]  列出分类（0 支出 / 1 收入）
-qianji bills [--book <id>] [--pages N]   拉取账单并打印 JSON
+qianji bills [--book <id>] [--pages N]   列出账单（最新在上；--book 按账本筛选；默认拉全部页）
 qianji raw <ctrl> <act> [key=value ...]  对任意接口发签名请求，打印 JSON
 qianji saving                            列出存钱计划
 qianji currency                          列出货币
@@ -78,7 +77,7 @@ qianji billimage _eeaa93c4790f4dcd9e16f62bc6109368 --size md  # 中图 640
 - `qianji me --json` → 美化 JSON
 - `qianji bills --raw` → 原始响应
 
-默认人读已覆盖 `me` / `books` / `assets` / `bills` / `categories` / `logins`；其余命令人读模式暂回退为美化 JSON。
+默认人读覆盖 `me` / `books` / `assets` / `bills` / `categories` / `logins` / `saving` / `currency` / `repeat` / `installment`；`raw` 命令默认走美化 JSON。
 
 ### 设备信息（重要）
 

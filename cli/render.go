@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -100,7 +102,15 @@ func genderText(g int) string {
 	}
 }
 
+// vipTypeText maps viptype to the member name from vip/config.types (name2).
+var vipTypeText = map[int]string{
+	0: "非会员", 2: "月度会员", 3: "半年会员", 4: "年度会员", 100: "终身会员",
+}
+
 func vipText(t int) string {
+	if s, ok := vipTypeText[t]; ok {
+		return s
+	}
 	if t <= 0 {
 		return "非会员"
 	}
@@ -235,27 +245,23 @@ func renderLogins(data json.RawMessage) {
 	}
 }
 
-func renderBills(data json.RawMessage) {
-	var w struct {
-		Changes []struct {
-			Time      int64    `json:"time"`
-			Type      int      `json:"type"`
-			Money     float64  `json:"money"`
-			Fromact   string   `json:"fromact"`
-			Targetact string   `json:"targetact"`
-			Remark    string   `json:"remark"`
-			Descinfo  string   `json:"descinfo"`
-			Images    []string `json:"images"`
-			Status    int      `json:"status"`
-		} `json:"changes"`
-		Deletes []int64 `json:"deletes"`
-		Hasmore int     `json:"hasmore"`
-	}
-	if json.Unmarshal(data, &w) != nil {
-		printJSON(data)
-		return
-	}
-	for _, b := range w.Changes {
+type billRow struct {
+	Time      int64    `json:"time"`
+	Type      int      `json:"type"`
+	Money     float64  `json:"money"`
+	Fromact   string   `json:"fromact"`
+	Targetact string   `json:"targetact"`
+	Remark    string   `json:"remark"`
+	Descinfo  string   `json:"descinfo"`
+	Images    []string `json:"images"`
+	Status    int      `json:"status"`
+}
+
+// renderBillRows prints bills accumulated across pages, newest first, plus a
+// summary. truncated means a --pages cap stopped the pull before hasmore=0.
+func renderBillRows(rows []billRow, deletes int, truncated bool) {
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Time > rows[j].Time })
+	for _, b := range rows {
 		note := b.Remark
 		if note == "" && b.Descinfo != b.Fromact {
 			note = b.Descinfo
@@ -276,12 +282,127 @@ func renderBills(data json.RawMessage) {
 		}
 		fmt.Println(line)
 	}
-	tail := fmt.Sprintf("— %d 条", len(w.Changes))
-	if len(w.Deletes) > 0 {
-		tail += fmt.Sprintf("，另有 %d 条已删除", len(w.Deletes))
+	tail := fmt.Sprintf("— 共 %d 条", len(rows))
+	if deletes > 0 {
+		tail += fmt.Sprintf("，另有 %d 条已删除", deletes)
 	}
-	if w.Hasmore == 1 {
-		tail += "，还有更多（加 --pages N 拉更多页）"
+	if truncated {
+		tail += "，已达 --pages 上限（增大可拉更多）"
 	}
 	fmt.Println(tail)
+}
+
+func freqText(f string) string {
+	switch f {
+	case "day":
+		return "日"
+	case "week":
+		return "周"
+	case "month":
+		return "月"
+	case "year":
+		return "年"
+	default:
+		return f
+	}
+}
+
+func renderSaving(data json.RawMessage) {
+	var w struct {
+		List []struct {
+			Name     string `json:"name"`
+			Currency string `json:"currency"`
+			Remark   string `json:"remark"`
+			Rule     struct {
+				Amount    float64 `json:"amount"`
+				Frequency string  `json:"frequency"`
+			} `json:"rule"`
+		} `json:"list"`
+	}
+	if json.Unmarshal(data, &w) != nil {
+		printJSON(data)
+		return
+	}
+	if len(w.List) == 0 {
+		fmt.Println("(无存钱计划)")
+		return
+	}
+	for _, s := range w.List {
+		line := fmt.Sprintf("%-20s 目标 %s %s", s.Name, money(s.Rule.Amount), s.Currency)
+		if s.Rule.Frequency != "" {
+			line += "  每" + freqText(s.Rule.Frequency)
+		}
+		if s.Remark != "" {
+			line += "  " + s.Remark
+		}
+		fmt.Println(line)
+	}
+}
+
+func renderCurrency(data json.RawMessage) {
+	var w struct {
+		List []struct {
+			Symbol    string `json:"symbol"`
+			Name      string `json:"name"`
+			Sign      string `json:"sign"`
+			Baseprice string `json:"baseprice"`
+			Iscommon  int    `json:"iscommon"`
+		} `json:"list"`
+	}
+	if json.Unmarshal(data, &w) != nil {
+		printJSON(data)
+		return
+	}
+	for _, c := range w.List {
+		star := "  "
+		if c.Iscommon == 1 {
+			star = "* "
+		}
+		fmt.Printf("%s%-5s %-8s %-3s 汇率 %s\n", star, c.Symbol, c.Name, c.Sign, c.Baseprice)
+	}
+	fmt.Printf("— 共 %d 种（* 常用，汇率相对基准货币）\n", len(w.List))
+}
+
+func renderRepeat(data json.RawMessage) {
+	var w struct {
+		List []struct {
+			Count int `json:"count"`
+			Data  struct {
+				Money    float64 `json:"money"`
+				Category struct {
+					Name string `json:"name"`
+				} `json:"category"`
+				Repeat struct {
+					Type  string   `json:"type"`
+					Value []string `json:"value"`
+				} `json:"repeat"`
+			} `json:"data"`
+		} `json:"list"`
+	}
+	if json.Unmarshal(data, &w) != nil {
+		printJSON(data)
+		return
+	}
+	if len(w.List) == 0 {
+		fmt.Println("(无周期记账)")
+		return
+	}
+	for _, r := range w.List {
+		rep := "每" + freqText(r.Data.Repeat.Type)
+		if len(r.Data.Repeat.Value) > 0 {
+			rep += " " + strings.Join(r.Data.Repeat.Value, ",") + "号"
+		}
+		fmt.Printf("%-16s %10s  %s  已执行 %d 次\n", r.Data.Category.Name, money(r.Data.Money), rep, r.Count)
+	}
+}
+
+func renderInstallment(data json.RawMessage) {
+	var w struct {
+		List []json.RawMessage `json:"list"`
+	}
+	if json.Unmarshal(data, &w) == nil && len(w.List) == 0 {
+		fmt.Println("(无分期)")
+		return
+	}
+	printJSON(data) // fields unconfirmed (no sample); show JSON until modelled
 }
