@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -109,6 +111,17 @@ func mcpHandler() http.HandlerFunc {
 			cfg, _ := loadConfig() // reload each call so a fresh login takes effect
 			if cfg.Token == "" || cfg.UID == "" {
 				rpcOK(w, req.ID, map[string]any{"content": []map[string]any{{"type": "text", "text": "未登录：请先在容器内执行 qianji login（如 docker exec -e QIANJI_PASSWORD=... <容器> qianji login --account <账号>），登录态写入卷后即可调用。"}}, "isError": true})
+				return
+			}
+			// Content tools return MCP content blocks directly (e.g. inline images)
+			// rather than a single text string; check them before the text tools.
+			if run, ok := contentTools[p.Name]; ok {
+				content, err := run(cfg, p.Arguments)
+				if err != nil {
+					rpcOK(w, req.ID, map[string]any{"content": []map[string]any{{"type": "text", "text": "error: " + err.Error()}}, "isError": true})
+					return
+				}
+				rpcOK(w, req.ID, map[string]any{"content": content})
 				return
 			}
 			for i := range mcpTools {
@@ -244,7 +257,7 @@ var mcpTools = []mcpTool{
 	}), func(cfg *Config, a map[string]any) (string, error) {
 		return callData(cfg, "category", "listv2", map[string]string{"bookid": aStr(a, "bookid", "-1"), "t": aStr(a, "type", "0")})
 	}},
-	{"qianji_bills", "账单查询，按时间/类型/分类id/金额/关键词筛选，返回账单 JSON 数组（最新在前）", objSchema(map[string]any{
+	{"qianji_bills", "账单查询，按时间/类型/分类id/金额/关键词筛选，返回账单 JSON 数组（最新在前）。账单的 images 字段是图片 id 数组，可传给 qianji_billimage 查看原图", objSchema(map[string]any{
 		"bookid":  strProp("账本 id，默认 -1"),
 		"since":   strProp("起始日期 2006-01-02"),
 		"until":   strProp("结束日期（不含当天之后），2006-01-02"),
@@ -298,6 +311,97 @@ var mcpTools = []mcpTool{
 		"act":    strProp("动作，如 list"),
 		"params": map[string]any{"type": "object", "description": "表单参数键值对"},
 	}, "ctrl", "act"), rawToolRun},
+	// qianji_billimage returns image content blocks (see contentTools), so its
+	// Run is nil; it is listed here only so tools/list advertises it.
+	{"qianji_billimage", "把账单的图片 id（bills 的 images 字段）转成原图 URL，并把图片内联返回以便直接查看", objSchema(map[string]any{
+		"id":   strProp("单个图片 id"),
+		"ids":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "多个图片 id"},
+		"size": strProp("origin 原图 / md 中图640 / small 缩略240，默认 origin"),
+	}), nil},
+}
+
+// contentTools return MCP content blocks (text + image) instead of a single
+// text string. Keyed by tool name; checked before the text-only mcpTools.
+var contentTools = map[string]func(cfg *Config, a map[string]any) ([]map[string]any, error){
+	"qianji_billimage": billimageToolRun,
+}
+
+// billImageSpec maps the friendly size to the host's spec suffix.
+func billImageSpec(size string) string {
+	switch size {
+	case "md":
+		return "webpmd640"
+	case "small":
+		return "webpsmall240"
+	case "", "origin":
+		return "webporigin"
+	default:
+		return size // allow a raw spec
+	}
+}
+
+// billimageToolRun turns bill image ids into both their public URL (text) and
+// the image bytes inlined as an MCP image block, so a client can show the photo
+// directly. The images are public by id, so no signing/token is needed.
+func billimageToolRun(_ *Config, a map[string]any) ([]map[string]any, error) {
+	var ids []string
+	if s := aStr(a, "id", ""); s != "" {
+		ids = append(ids, s)
+	}
+	if raw, ok := a["ids"].([]any); ok {
+		for _, v := range raw {
+			if s, ok := v.(string); ok && s != "" {
+				ids = append(ids, s)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("需要 id 或 ids（账单 images 字段里的图片 id）")
+	}
+	spec := billImageSpec(aStr(a, "size", "origin"))
+	var content []map[string]any
+	for _, id := range ids {
+		url := billImageHost + id + "!" + spec
+		content = append(content, map[string]any{"type": "text", "text": url})
+		data, mime, err := fetchBillImage(url)
+		if err != nil {
+			content = append(content, map[string]any{"type": "text", "text": "（图片抓取失败：" + err.Error() + "）"})
+			continue
+		}
+		content = append(content, map[string]any{
+			"type":     "image",
+			"data":     base64.StdEncoding.EncodeToString(data),
+			"mimeType": mime,
+		})
+	}
+	return content, nil
+}
+
+// fetchBillImage downloads a public bill image and returns its bytes + MIME type.
+func fetchBillImage(url string) ([]byte, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("http %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 20<<20)) // cap at 20 MiB
+	if err != nil {
+		return nil, "", err
+	}
+	mime := resp.Header.Get("Content-Type")
+	if mime == "" {
+		mime = "image/webp" // host serves webp
+	}
+	return data, mime, nil
 }
 
 func billsToolRun(cfg *Config, a map[string]any) (string, error) {

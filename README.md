@@ -62,7 +62,7 @@ QIANJI_MCP_PATH=一长串随机密钥 ./qianji mcp --addr :8787
 # 端点： POST http://localhost:8787/mcp/<密钥>
 ```
 
-手写 JSON-RPC over Streamable HTTP，**认证即密钥路径**（`/mcp/<密钥>`，错误路径一律 404）。暴露 `qianji_me/books/assets/categories/bills/saving/currency/logins/repeat/add/del/budget/budget_set/raw` 等工具。
+手写 JSON-RPC over Streamable HTTP，**认证即密钥路径**（`/mcp/<密钥>`，错误路径一律 404）。暴露 `qianji_me/books/assets/categories/bills/saving/currency/logins/repeat/add/del/budget/budget_set/billimage/raw` 等工具。`qianji_billimage` 会把账单的图片 id 转成原图 URL 并**内联返回图片本体**（base64 image 内容块），客户端可直接查看小票照片。
 
 > ⚠️ 工具含写入，能改你的真实账单。密钥路径是唯一防线——别泄露带密钥的完整 URL，对公网务必加 HTTPS 反代。
 
