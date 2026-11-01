@@ -351,6 +351,26 @@ func Example_renderBudgets() {
 	// (当期未设预算)
 }
 
+func TestBudgetToolBookID(t *testing.T) {
+	f := &fakeQianji{budgets: fakeMarch}
+	_, cfg := f.server(t)
+	// A real id works as a string (what the schema asks for) or a number.
+	for _, id := range []any{"7", float64(7)} {
+		a := map[string]any{"bookid": id, "month": "2026-3", "total": float64(2000)}
+		if out, err := budgetSetToolRun(cfg, a); err != nil || !strings.Contains(out, `"dry_run":true`) {
+			t.Errorf("bookid %v: out=%s err=%v", id, out, err)
+		}
+	}
+	// -1 is rejected with the ids to use instead, in either form.
+	for _, id := range []any{"-1", float64(-1)} {
+		a := map[string]any{"bookid": id, "month": "2026-3", "total": float64(2000)}
+		_, err := budgetSetToolRun(cfg, a)
+		if err == nil || !strings.Contains(err.Error(), "b（id 7）") || !strings.Contains(err.Error(), "不支持 -1") {
+			t.Errorf("bookid %v: err = %v", id, err)
+		}
+	}
+}
+
 func TestBookRangeNullConfig(t *testing.T) {
 	f := &fakeQianji{budgets: fakeMarch}
 	_, cfg := f.server(t)

@@ -448,6 +448,7 @@ func bookRange(cfg *Config, book string) (string, error) {
 	var w struct {
 		List []struct {
 			Bookid json.Number `json:"bookid"`
+			Name   string      `json:"name"`
 			Config *struct {
 				Range string `json:"range"`
 			} `json:"config"`
@@ -456,6 +457,7 @@ func bookRange(cfg *Config, book string) (string, error) {
 	if err := json.Unmarshal(env.Data, &w); err != nil {
 		return "", fmt.Errorf("解析账本列表失败：%w", err)
 	}
+	books := make([]string, 0, len(w.List))
 	for _, b := range w.List {
 		if b.Bookid.String() == book {
 			if b.Config == nil {
@@ -463,8 +465,10 @@ func bookRange(cfg *Config, book string) (string, error) {
 			}
 			return b.Config.Range, nil
 		}
+		books = append(books, fmt.Sprintf("%s（id %s）", b.Name, b.Bookid))
 	}
-	return "", fmt.Errorf("找不到账本 %s（用 qianji books 查）", book)
+	// Other tools default to book -1, but a budget belongs to one real book.
+	return "", fmt.Errorf("找不到账本 %q，预算要用真实账本 id，不支持 -1。可用账本：%s", book, strings.Join(books, "、"))
 }
 
 func budgetParams(book, rng string, p budgetPeriod) map[string]string {
@@ -494,10 +498,6 @@ type budgetPlan struct {
 // sends nothing and stops at the first failed read: budget/submitv2 replaces the
 // whole period, so a partial picture of it must never reach the server.
 func prepareBudgetSet(cfg *Config, a budgetSetArgs, now time.Time) (*budgetPlan, error) {
-	bookID, err := strconv.ParseInt(a.book, 10, 64)
-	if err != nil || bookID <= 0 {
-		return nil, fmt.Errorf("需要账本 id（整数，用 qianji books 查），收到 %q", a.book)
-	}
 	if a.total != nil && (a.cate != "" || a.money != nil) {
 		return nil, fmt.Errorf("总预算和分类预算一次只能改一个")
 	}
@@ -511,6 +511,10 @@ func prepareBudgetSet(cfg *Config, a budgetSetArgs, now time.Time) (*budgetPlan,
 	rng, err := bookRange(cfg, a.book)
 	if err != nil {
 		return nil, err
+	}
+	bookID, err := strconv.ParseInt(a.book, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("账本 id 不是整数：%q", a.book)
 	}
 	period, err := resolveBudgetPeriod(a.month, a.year, rng, now)
 	if err != nil {

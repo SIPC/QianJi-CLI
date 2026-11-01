@@ -280,12 +280,12 @@ var mcpTools = []mcpTool{
 		"billid": numProp("账单 id"),
 	}, "billid"), delToolRun},
 	{"qianji_budget", "查询某账本某月或某年的预算（总预算和分类预算）", objSchema(map[string]any{
-		"bookid": strProp("账本 id（见 qianji_books）"),
+		"bookid": strProp("真实账本 id 的字符串（见 qianji_books），不支持 -1"),
 		"month":  strProp("月份 2026-11，默认当前月"),
 		"year":   strProp("年份 2026，查年度预算；与 month 二选一"),
 	}, "bookid"), budgetToolRun},
 	{"qianji_budget_set", "修改一项预算：传 total 改总预算，或传 cate + money 改分类预算（money 为 0 表示删除）。服务器按整期覆盖，默认只返回预览，confirm=true 才真正写入", objSchema(map[string]any{
-		"bookid":  strProp("账本 id（见 qianji_books）"),
+		"bookid":  strProp("真实账本 id 的字符串（见 qianji_books），不支持 -1"),
 		"month":   strProp("月份 2026-11，默认当前月"),
 		"year":    strProp("年份 2026，改年度预算；与 month 二选一"),
 		"total":   numProp("总预算金额"),
