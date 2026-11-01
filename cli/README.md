@@ -103,7 +103,7 @@ qianji billimage _eeaa93c4790f4dcd9e16f62bc6109368 --size md  # 中图 640
 
 - **已验证**：登录 + 只读接口在真实账号上跑通——`login`、`books`、`assets`、`bills`、`client/init`（带登录态）均返回正常数据。
 - **关键坑（已修）**：服务器对带登录态的请求**大小写敏感地校验请求头**，头名必须全小写（`utoken` 而非 `Utoken`）。Go 的 `http.Header.Set` 会自动规范成首字母大写，导致所有鉴权接口返回 `当前版本太旧`，而免鉴权接口正常——极易误判成版本号或签名问题。本 CLI 直接写 `Header[name]` 绕过规范化。详见 [../docs/qianji-api.md](../docs/qianji-api.md)。
-- **暂未实现**：记账写入（`bill/syncall`）。写入要构造完整账单对象并走同步协议，风险高，放到下一轮，并会加二次确认和 dry-run。
+- **暂未实现（归入下一轮写入功能）**：记账写入（`bill/syncall`）、预算设置（`budget/submitv2`）、以及预算查询（`budget/list`，需账本 `range` + `DateFilter` 过滤器，参数较复杂）。这些会改真实数据或依赖复杂参数，统一放到写入批次，并会加二次确认和 dry-run。
 
 ## 后续：MCP
 
