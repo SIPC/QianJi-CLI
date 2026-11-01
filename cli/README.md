@@ -22,7 +22,7 @@ GOOS=darwin  GOARCH=arm64 go build -o qianji .
 ## 使用
 
 ```
-qianji login [--account <手机号/邮箱>]    登录；密码取自 $QIANJI_PASSWORD，否则交互输入
+qianji login [--account <手机号/邮箱>] [--password <密码>]  登录；密码也可取自 $QIANJI_PASSWORD，否则交互输入
 qianji whoami                            显示当前登录用户
 qianji logout                            清除本地 token
 qianji books                             列出账本
@@ -71,6 +71,7 @@ QIANJI_PASSWORD='你的密码' ./qianji login --account 13800000000
 
 - 密码不落盘：登录时取 MD5 后发送，本地只保存服务器返回的 `token` 和 `uid`。
 - `$QIANJI_PASSWORD` 方式不会在终端回显；交互输入目前会回显（纯标准库、零依赖的取舍），介意就用环境变量或管道。
+- `--password` 参数图方便，但密码会进 shell 历史和进程列表，共享机器上优先用 `$QIANJI_PASSWORD`。密码取 MD5 后发送，优先级：`--password` > `$QIANJI_PASSWORD` > 交互输入。
 - 只用于你本人的账号，不要对他人账号使用。
 
 ## 工作原理

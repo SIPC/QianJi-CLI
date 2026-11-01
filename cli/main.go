@@ -58,7 +58,7 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `qianji %s — 钱迹 private API CLI (use your own account)
 
 Usage:
-  qianji login [--account <phone/email>]   Log in; password from $QIANJI_PASSWORD or prompt
+  qianji login [--account <a>] [--password <p>]  Log in; password also via $QIANJI_PASSWORD or prompt
   qianji whoami                             Show the logged-in user
   qianji logout                             Forget the saved token
   qianji books                              List account books (账本)
@@ -97,16 +97,30 @@ func printJSON(raw json.RawMessage) {
 
 func cmdLogin(cfg *Config, args []string) {
 	account := cfg.Account
+	pwd := ""
 	for i := 0; i < len(args); i++ {
-		if args[i] == "--account" && i+1 < len(args) {
-			account = args[i+1]
-			i++
+		switch args[i] {
+		case "--account":
+			if i+1 < len(args) {
+				account = args[i+1]
+				i++
+			}
+		case "--password", "-p":
+			if i+1 < len(args) {
+				pwd = args[i+1]
+				i++
+			}
 		}
 	}
 	if account == "" {
 		account = prompt("Account (phone/email): ")
 	}
-	pwd := os.Getenv("QIANJI_PASSWORD")
+	// Password precedence: --password flag, then $QIANJI_PASSWORD, then prompt.
+	// A password passed on the command line can show up in shell history and the
+	// process list, so prefer $QIANJI_PASSWORD on shared machines.
+	if pwd == "" {
+		pwd = os.Getenv("QIANJI_PASSWORD")
+	}
 	if pwd == "" {
 		pwd = prompt("Password (will echo; set $QIANJI_PASSWORD to avoid): ")
 	}
