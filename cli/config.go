@@ -9,6 +9,10 @@ import (
 	"path/filepath"
 )
 
+// cliVersion is this tool's own version. It is surfaced as the device name
+// (devname) so it shows up in Qianji's 登录记录 as e.g. "QianJi-CLI/0.1.0".
+const cliVersion = "0.1.0"
+
 // Config is persisted in a .qianji-cli directory next to the executable after login.
 type Config struct {
 	Account string `json:"account"`
@@ -56,7 +60,7 @@ func (d Device) withDefaults() Device {
 	// so it is recognizable in the account's 登录记录. Override to blend in if wanted.
 	return Device{
 		Brand:    def(d.Brand, "QianJi-CLI"),
-		Name:     def(d.Name, "qianji-cli"),
+		Name:     def(d.Name, "QianJi-CLI/"+cliVersion),
 		OSVer:    def(d.OSVer, "33"),
 		Market:   def(d.Market, "qianji-cli"),
 		TZOffset: def(d.TZOffset, "28800"),

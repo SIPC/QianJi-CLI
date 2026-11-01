@@ -139,9 +139,9 @@ func (c *Client) deviceHeaders(ctrl, act string) map[string]string {
 	return h
 }
 
-// userAgent mimics the app's request fingerprint. Volley's HurlStack sets no
-// explicit User-Agent, so the app sends Android's default HttpURLConnection
-// agent (Dalvik/...); we reproduce that shape. Override via $QIANJI_UA or config.
+// userAgent identifies this tool honestly. The server does not validate the UA
+// (the auth gate turned out to be header-name case, not the fingerprint), so we
+// send our own name rather than impersonate a phone. Override via $QIANJI_UA or config.
 func (c *Client) userAgent() string {
 	if v := os.Getenv("QIANJI_UA"); v != "" {
 		return v
@@ -149,8 +149,7 @@ func (c *Client) userAgent() string {
 	if c.cfg.UA != "" {
 		return c.cfg.UA
 	}
-	d := c.cfg.Device.withDefaults()
-	return "Dalvik/2.1.0 (Linux; U; Android 15; " + d.Name + " Build/AQ3A.240912.001)"
+	return "QianJi-CLI/" + cliVersion
 }
 
 func firstNonEmpty(vals ...string) string {

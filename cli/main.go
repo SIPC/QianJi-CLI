@@ -43,6 +43,8 @@ func main() {
 		cmdBills(cfg, args)
 	case "raw":
 		cmdRaw(cfg, args)
+	case "version", "--version", "-v":
+		fmt.Println("qianji " + cliVersion)
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -53,7 +55,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `qianji — 钱迹 private API CLI (use your own account)
+	fmt.Fprintf(os.Stderr, `qianji %s — 钱迹 private API CLI (use your own account)
 
 Usage:
   qianji login [--account <phone/email>]   Log in; password from $QIANJI_PASSWORD or prompt
@@ -64,9 +66,10 @@ Usage:
   qianji categories --book <id> [--type 0|1] List categories (支出/收入)
   qianji bills [--book <id>] [--pages N]    Pull bills (账单) and print JSON
   qianji raw <ctrl> <act> [key=value ...]   Signed call to any endpoint; prints JSON
+  qianji version                            Show CLI version
 
 Config is stored next to the executable in .qianji-cli/config.json (token has file mode 0600).
-`)
+`, cliVersion)
 }
 
 func fatal(err error) {
