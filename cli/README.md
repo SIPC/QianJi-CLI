@@ -150,18 +150,18 @@ QIANJI_MCP_PATH=你的一长串随机密钥 ./qianji mcp --addr :8787
 docker build -t qianji-mcp .
 ```
 
-先登录一次（写进卷，密码用 env 避免回显）：
+先起 MCP server（未登录也能先跑起来，不会崩）：
 
 ```bash
-docker run --rm -it -v qianji-data:/data -e QIANJI_PASSWORD=你的密码 qianji-mcp login --account 你的账号
+docker run -d --name qianji -p 8787:8787 -v qianji-data:/data -e QIANJI_MCP_PATH=一长串随机密钥 qianji-mcp
 ```
 
-再起 MCP server（复用卷里的登录态）：
+再登录（写进卷；server 每次调用都读最新登录态，登录后立即可用）：
 
 ```bash
-docker run -d -p 8787:8787 -v qianji-data:/data -e QIANJI_MCP_PATH=一长串随机密钥 qianji-mcp
+docker exec -it -e QIANJI_PASSWORD=你的密码 qianji qianji login --account 你的账号
 ```
 
-端点：`POST http://<host>:8787/mcp/<密钥>`。卷 `qianji-data` 里存着 `config.json` 和缓存，容器重建也不丢。
+端点：`POST http://<host>:8787/mcp/<密钥>`。卷 `qianji-data` 存着 `config.json` 和缓存，容器重建也不丢；登录前调用工具会返回友好提示，而不是让 server 崩溃重启。
 
 > 备选（不挂卷）：直接用环境变量注入登录态 `-e QIANJI_UID=<uid> -e QIANJI_TOKEN=<token>`（`loadConfig` 也认 `QIANJI_HOST`），省掉 login 步骤，但每次都要给 token。

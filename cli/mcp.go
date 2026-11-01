@@ -16,8 +16,10 @@ import (
 // cmdMCP starts an HTTP MCP server. Auth is the secret path: requests must POST
 // to /mcp/<secret>; anything else 404s. Set $QIANJI_MCP_PATH to pin the secret,
 // otherwise a random one is generated and printed at startup.
-func cmdMCP(cfg *Config, args []string) {
-	requireLogin(cfg)
+func cmdMCP(_ *Config, args []string) {
+	// Start without requiring login: bring the server up first, then `qianji
+	// login` (e.g. via docker exec, writing to the mounted volume). Each tool
+	// call reloads the config, so calls work as soon as you've logged in.
 	addr := ":8787"
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--addr" && i+1 < len(args) {
@@ -33,7 +35,7 @@ func cmdMCP(cfg *Config, args []string) {
 	}
 	path := "/mcp/" + secret
 	mux := http.NewServeMux()
-	mux.HandleFunc(path, mcpHandler(cfg))
+	mux.HandleFunc(path, mcpHandler())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	fmt.Fprintf(os.Stderr, "qianji MCP server on %s\n  endpoint: POST http://<host>%s\n  tools:    %d（读 + 写）\n  固定路径设 $QIANJI_MCP_PATH；否则每次启动随机生成\n", addr, path, len(mcpTools))
 	if err := http.ListenAndServe(addr, mux); err != nil {
@@ -47,7 +49,7 @@ type mcpTool struct {
 	Run        func(cfg *Config, a map[string]any) (string, error)
 }
 
-func mcpHandler(cfg *Config) http.HandlerFunc {
+func mcpHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "POST only", http.StatusMethodNotAllowed)
@@ -86,6 +88,11 @@ func mcpHandler(cfg *Config) http.HandlerFunc {
 				Arguments map[string]any `json:"arguments"`
 			}
 			_ = json.Unmarshal(req.Params, &p)
+			cfg, _ := loadConfig() // reload each call so a fresh login takes effect
+			if cfg.Token == "" || cfg.UID == "" {
+				rpcOK(w, req.ID, map[string]any{"content": []map[string]any{{"type": "text", "text": "未登录：请先在容器内执行 qianji login（如 docker exec -e QIANJI_PASSWORD=... <容器> qianji login --account <账号>），登录态写入卷后即可调用。"}}, "isError": true})
+				return
+			}
 			for i := range mcpTools {
 				if mcpTools[i].Name != p.Name {
 					continue

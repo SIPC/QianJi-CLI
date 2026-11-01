@@ -1,9 +1,9 @@
 # 钱迹 CLI 的 MCP server 容器镜像；配置与缓存持久化到挂载卷 /data。
 #   docker build -t qianji-mcp .
-#   # 登录一次（写入卷，之后复用）：
-#   docker run --rm -it -v qianji-data:/data -e QIANJI_PASSWORD=你的密码 qianji-mcp login --account 你的账号
-#   # 起 MCP server：
-#   docker run -d -p 8787:8787 -v qianji-data:/data -e QIANJI_MCP_PATH=一长串随机密钥 qianji-mcp
+#   # 先起 server（未登录也不崩）：
+#   docker run -d --name qianji -p 8787:8787 -v qianji-data:/data -e QIANJI_MCP_PATH=密钥 qianji-mcp
+#   # 再登录（写入卷，下次调用即生效）：
+#   docker exec -it -e QIANJI_PASSWORD=密码 qianji qianji login --account 账号
 # MCP 端点： POST http://<host>:8787/mcp/<QIANJI_MCP_PATH>
 # 备选：不挂卷，直接 -e QIANJI_UID=<uid> -e QIANJI_TOKEN=<token> 注入登录态。
 
