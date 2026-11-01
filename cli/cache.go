@@ -68,3 +68,63 @@ func saveBillsCache(book string, c *billsCache) error {
 	}
 	return os.WriteFile(p, b, 0o600)
 }
+
+type catNode struct {
+	Id      int64     `json:"id"`
+	Name    string    `json:"name"`
+	Sublist []catNode `json:"sublist"`
+}
+
+func collectCat(n catNode, m map[int64]string) {
+	if n.Id != 0 {
+		m[n.Id] = n.Name
+	}
+	for _, s := range n.Sublist {
+		collectCat(s, m)
+	}
+}
+
+func catCachePath(book string) (string, error) {
+	p, err := configPath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(p), "categories_"+sanitize(book)+".json"), nil
+}
+
+// loadCategoryMap returns a cateid -> name map for a book, cached locally. On a
+// cache miss it pulls expense (t=0) and income (t=1) categories and saves them.
+func loadCategoryMap(cfg *Config, book string) map[int64]string {
+	if p, err := catCachePath(book); err == nil {
+		if b, err := os.ReadFile(p); err == nil {
+			var m map[int64]string
+			if json.Unmarshal(b, &m) == nil && len(m) > 0 {
+				return m
+			}
+		}
+	}
+	m := map[int64]string{}
+	c := newClient(cfg)
+	for _, t := range []string{"0", "1"} {
+		env, err := c.call("category", "listv2", map[string]string{"bookid": book, "t": t})
+		if err != nil {
+			continue
+		}
+		var w struct {
+			List []catNode `json:"list"`
+		}
+		if json.Unmarshal(env.Data, &w) == nil {
+			for _, n := range w.List {
+				collectCat(n, m)
+			}
+		}
+	}
+	if len(m) > 0 {
+		if p, err := catCachePath(book); err == nil {
+			if b, e := json.Marshal(m); e == nil {
+				_ = os.WriteFile(p, b, 0o600)
+			}
+		}
+	}
+	return m
+}

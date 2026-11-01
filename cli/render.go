@@ -249,6 +249,7 @@ type billRow struct {
 	Time      int64    `json:"time"`
 	Type      int      `json:"type"`
 	Money     float64  `json:"money"`
+	Cateid    int64    `json:"cateid"`
 	Fromact   string   `json:"fromact"`
 	Targetact string   `json:"targetact"`
 	Remark    string   `json:"remark"`
@@ -257,10 +258,67 @@ type billRow struct {
 	Status    int      `json:"status"`
 }
 
+// billFilter is applied locally to the pulled/cached bills before rendering.
+type billFilter struct {
+	since, until int64   // unix; until is an exclusive upper bound
+	typ          int     // -1 = any
+	cate         int64   // 0 = any (resolved from cateArg)
+	cateArg      string  // --cate value: a category name or id
+	min, max     float64 // max 0 = no upper bound
+	hasMin       bool
+	keyword      string
+	limit        int // 0 = all
+}
+
+func (f *billFilter) match(b billRow) bool {
+	if f.since > 0 && b.Time < f.since {
+		return false
+	}
+	if f.until > 0 && b.Time >= f.until {
+		return false
+	}
+	if f.typ >= 0 && b.Type != f.typ {
+		return false
+	}
+	if f.cate > 0 && b.Cateid != f.cate {
+		return false
+	}
+	if f.hasMin && b.Money < f.min {
+		return false
+	}
+	if f.max > 0 && b.Money > f.max {
+		return false
+	}
+	if f.keyword != "" {
+		if !strings.Contains(b.Remark, f.keyword) && !strings.Contains(b.Descinfo, f.keyword) &&
+			!strings.Contains(b.Fromact, f.keyword) && !strings.Contains(b.Targetact, f.keyword) {
+			return false
+		}
+	}
+	return true
+}
+
+func applyBillFilter(rows []billRow, f *billFilter) []billRow {
+	if f == nil {
+		return rows
+	}
+	out := make([]billRow, 0, len(rows))
+	for _, b := range rows {
+		if f.match(b) {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
 // renderBillRows prints bills accumulated across pages, newest first, plus a
 // summary. truncated means a --pages cap stopped the pull before hasmore=0.
-func renderBillRows(rows []billRow, deletes int, truncated bool) {
+func renderBillRows(rows []billRow, deletes int, truncated bool, limit int, cats map[int64]string) {
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Time > rows[j].Time })
+	total := len(rows)
+	if limit > 0 && len(rows) > limit {
+		rows = rows[:limit]
+	}
 	for _, b := range rows {
 		note := b.Remark
 		if note == "" && b.Descinfo != b.Fromact {
@@ -271,6 +329,9 @@ func renderBillRows(rows []billRow, deletes int, truncated bool) {
 			acct = b.Fromact + "→" + b.Targetact
 		}
 		line := fmt.Sprintf("%s  %-8s %10s  %s", fmtTime(b.Time), billType(b.Type), money(b.Money), acct)
+		if c := cats[b.Cateid]; c != "" {
+			line += "  [" + c + "]"
+		}
 		if note != "" {
 			line += "  " + note
 		}
@@ -282,7 +343,10 @@ func renderBillRows(rows []billRow, deletes int, truncated bool) {
 		}
 		fmt.Println(line)
 	}
-	tail := fmt.Sprintf("— 共 %d 条", len(rows))
+	tail := fmt.Sprintf("— 共 %d 条", total)
+	if limit > 0 && total > limit {
+		tail += fmt.Sprintf("，显示最近 %d 条", limit)
+	}
 	if deletes > 0 {
 		tail += fmt.Sprintf("，另有 %d 条已删除", deletes)
 	}

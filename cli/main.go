@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -80,7 +81,8 @@ Usage:
   qianji books                              List account books (账本)
   qianji assets                             List assets (资产账户)
   qianji categories --book <id> [--type 0|1] List categories (支出/收入)
-  qianji bills [--book <id>] [--pages N] [--no-cache]  Bills newest-first; local incremental cache; --book filters 账本
+  qianji bills [--book <id>] [--since <d>] [--until <d>] [--type <t>] [--cate <名/id>] [--min <m>] [--max <m>] [--keyword <s>] [--limit <n>] [--pages N] [--no-cache]
+                                            Bills newest-first, filterable; local incremental cache
   qianji raw <ctrl> <act> [key=value ...]   Signed call to any endpoint; prints JSON
   qianji add --type <t> --money <m> --cate <id> --asset <id> [--book <id>] [--remark <s>] [--time <ts>] [--confirm]
                                             Write one bill (dry-run unless --confirm)
@@ -277,6 +279,7 @@ func cmdBills(cfg *Config, args []string) {
 	requireLogin(cfg)
 	book, maxPages := "-1", 0 // maxPages 0 = pull every page until hasmore=0
 	noCache := false
+	f := &billFilter{typ: -1}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--book":
@@ -291,23 +294,88 @@ func cmdBills(cfg *Config, args []string) {
 			}
 		case "--no-cache":
 			noCache = true
+		case "--since":
+			if i+1 < len(args) {
+				f.since = mustDate(args[i+1])
+				i++
+			}
+		case "--until":
+			if i+1 < len(args) {
+				f.until = mustDateEnd(args[i+1])
+				i++
+			}
+		case "--type":
+			if i+1 < len(args) {
+				if n, e := strconv.Atoi(args[i+1]); e == nil {
+					f.typ = n
+				}
+				i++
+			}
+		case "--cate":
+			if i+1 < len(args) {
+				f.cateArg = args[i+1]
+				i++
+			}
+		case "--min":
+			if i+1 < len(args) {
+				if m, e := strconv.ParseFloat(args[i+1], 64); e == nil {
+					f.min, f.hasMin = m, true
+				}
+				i++
+			}
+		case "--max":
+			if i+1 < len(args) {
+				if m, e := strconv.ParseFloat(args[i+1], 64); e == nil {
+					f.max = m
+				}
+				i++
+			}
+		case "--keyword", "-k":
+			if i+1 < len(args) {
+				f.keyword = args[i+1]
+				i++
+			}
+		case "--limit":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &f.limit)
+				i++
+			}
 		}
 	}
 	// Human mode keeps a local incremental cache so repeat runs only fetch what
 	// changed. raw/json want the actual responses and --no-cache forces a full
-	// pull, so those bypass the cache.
+	// pull, so those bypass the cache. Filters apply locally in human mode.
 	if outputMode == "raw" || outputMode == "json" || noCache {
-		cmdBillsDirect(cfg, book, maxPages)
+		cmdBillsDirect(cfg, book, maxPages, f)
 		return
 	}
-	cmdBillsSync(cfg, book, maxPages)
+	cmdBillsSync(cfg, book, maxPages, f)
+}
+
+// resolveCate turns --cate (a category name or id) into a category id, using
+// the cateid->name map. Exits if a given name matches nothing.
+func resolveCate(f *billFilter, cats map[int64]string) {
+	if f.cateArg == "" {
+		return
+	}
+	if id, err := strconv.ParseInt(f.cateArg, 10, 64); err == nil {
+		f.cate = id
+		return
+	}
+	for id, name := range cats {
+		if name == f.cateArg {
+			f.cate = id
+			return
+		}
+	}
+	fatal(fmt.Errorf("找不到分类 %q（用 qianji categories --book <id> 查名字）", f.cateArg))
 }
 
 // cmdBillsDirect pulls pages straight from the API. syncv2/pull is cursor-paged
 // and returns bills in sync order (by update time/id), so to show the newest we
 // pull every page (until hasmore=0, or --pages N) and sort. raw/json print each
 // page's response; human accumulates and renders.
-func cmdBillsDirect(cfg *Config, book string, maxPages int) {
+func cmdBillsDirect(cfg *Config, book string, maxPages int, f *billFilter) {
 	c := newClient(cfg)
 	pageoffset, pagesign := "0", "0"
 	var rows []billRow
@@ -350,14 +418,16 @@ func cmdBillsDirect(cfg *Config, book string, maxPages int) {
 		pageoffset, pagesign = itoa(p.PageOffset), p.PageSign
 	}
 	if outputMode != "raw" && outputMode != "json" {
-		renderBillRows(rows, deletes, truncated)
+		cats := loadCategoryMap(cfg, book)
+		resolveCate(f, cats)
+		renderBillRows(applyBillFilter(rows, f), deletes, truncated, f.limit, cats)
 	}
 }
 
 // cmdBillsSync keeps a local cache (.qianji-cli/bills_<book>.json) and, via the
 // server's lasttimes cursor, pulls only what changed since last run. First run
 // is a full pull that builds the cache; later runs usually fetch 0–few bills.
-func cmdBillsSync(cfg *Config, book string, maxPages int) {
+func cmdBillsSync(cfg *Config, book string, maxPages int, f *billFilter) {
 	cache := loadBillsCache(book)
 	c := newClient(cfg)
 	lt := strings.TrimSpace(string(cache.LastTimes))
@@ -420,7 +490,9 @@ func cmdBillsSync(cfg *Config, book string, maxPages int) {
 			rows = append(rows, r)
 		}
 	}
-	renderBillRows(rows, 0, false)
+	cats := loadCategoryMap(cfg, book)
+	resolveCate(f, cats)
+	renderBillRows(applyBillFilter(rows, f), 0, false, f.limit, cats)
 	if fetched > 0 {
 		fmt.Fprintf(os.Stderr, "（本次同步 %d 条变更）\n", fetched)
 	}

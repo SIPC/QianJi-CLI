@@ -147,6 +147,28 @@ func cmdAdd(cfg *Config, args []string) {
 	printJSON(env.Data)
 }
 
+// mustDate parses a date/time for filters, exiting on error.
+func mustDate(s string) int64 {
+	t, err := parseBillTime(s)
+	if err != nil {
+		fatal(err)
+	}
+	return t.Unix()
+}
+
+// mustDateEnd is like mustDate but, for a bare date (no time), rolls to the next
+// day so an exclusive upper bound includes the whole day.
+func mustDateEnd(s string) int64 {
+	t, err := parseBillTime(s)
+	if err != nil {
+		fatal(err)
+	}
+	if t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 {
+		t = t.Add(24 * time.Hour)
+	}
+	return t.Unix()
+}
+
 // parseBillTime accepts yyyy-MM-dd[ HH:mm[:ss]] in local time.
 func parseBillTime(s string) (time.Time, error) {
 	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02 15:04", "2006-01-02"} {
