@@ -43,6 +43,18 @@ func main() {
 		cmdBills(cfg, args)
 	case "raw":
 		cmdRaw(cfg, args)
+	case "saving":
+		cmdSimpleList(cfg, "saving", "list")
+	case "currency":
+		cmdSimpleList(cfg, "currency", "listv2")
+	case "logins":
+		cmdSimpleList(cfg, "account", "loginrecords2")
+	case "repeat":
+		cmdSimpleList(cfg, "repeat_task", "list")
+	case "installment":
+		cmdSimpleList(cfg, "installment", "list")
+	case "billimage", "billimg":
+		cmdBillImage(cfg, args)
 	case "version", "--version", "-v":
 		fmt.Println("qianji " + cliVersion)
 	case "-h", "--help", "help":
@@ -66,6 +78,12 @@ Usage:
   qianji categories --book <id> [--type 0|1] List categories (支出/收入)
   qianji bills [--book <id>] [--pages N]    Pull bills (账单) and print JSON
   qianji raw <ctrl> <act> [key=value ...]   Signed call to any endpoint; prints JSON
+  qianji saving                             List saving plans (存钱计划)
+  qianji currency                           List currencies (货币)
+  qianji logins                             List login records / devices (登录记录)
+  qianji repeat                             List repeat tasks (周期记账)
+  qianji installment                        List installments (分期)
+  qianji billimage <id>... [--size origin|md|small]  Bill image URL(s) from image ids
   qianji version                            Show CLI version
 
 Config is stored next to the executable in .qianji-cli/config.json (token has file mode 0600).
@@ -287,6 +305,50 @@ func cmdRaw(cfg *Config, args []string) {
 		fatal(err)
 	}
 	printJSON(env.Data)
+}
+
+// cmdSimpleList calls a list endpoint that needs no extra params and prints its data.
+func cmdSimpleList(cfg *Config, ctrl, act string) {
+	requireLogin(cfg)
+	env, err := newClient(cfg).call(ctrl, act, map[string]string{})
+	if err != nil {
+		fatal(err)
+	}
+	printJSON(env.Data)
+}
+
+// cmdBillImage turns bill image ids (a bill's `images` field) into full URLs.
+// Images are served from billImageHost as <id>!<spec>; spec picks the size
+// (origin/md/small). No request is made here — the URLs are public by image id.
+func cmdBillImage(_ *Config, args []string) {
+	spec := "webporigin"
+	var ids []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--size":
+			if i+1 < len(args) {
+				switch args[i+1] {
+				case "origin":
+					spec = "webporigin"
+				case "md":
+					spec = "webpmd640"
+				case "small":
+					spec = "webpsmall240"
+				default:
+					spec = args[i+1] // allow a raw spec
+				}
+				i++
+			}
+		default:
+			ids = append(ids, args[i])
+		}
+	}
+	if len(ids) == 0 {
+		fatal(fmt.Errorf("usage: qianji billimage <image-id> [...] [--size origin|md|small]"))
+	}
+	for _, id := range ids {
+		fmt.Printf("%s%s!%s\n", billImageHost, id, spec)
+	}
 }
 
 // --- helpers ---

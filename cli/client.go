@@ -14,6 +14,9 @@ import (
 
 const defaultHost = "https://api.qianjiapp.com/"
 
+// billImageHost serves bill images as <id>!<size-spec>, keyed by image id.
+const billImageHost = "http://billimg.qianjiapp.com/"
+
 // Client performs signed requests against the Qianji API.
 type Client struct {
 	cfg  *Config

@@ -30,6 +30,12 @@ qianji assets                            列出资产账户
 qianji categories --book <id> [--type 0|1]  列出分类（0 支出 / 1 收入）
 qianji bills [--book <id>] [--pages N]   拉取账单并打印 JSON
 qianji raw <ctrl> <act> [key=value ...]  对任意接口发签名请求，打印 JSON
+qianji saving                            列出存钱计划
+qianji currency                          列出货币
+qianji logins                            列出登录记录 / 设备
+qianji repeat                            列出周期记账
+qianji installment                       列出分期
+qianji billimage <图片id>... [--size origin|md|small]  由账单图片 id 生成图片 URL
 ```
 
 登录（密码不回显，建议用环境变量）：
@@ -41,6 +47,18 @@ QIANJI_PASSWORD='你的密码' ./qianji login --account 13800000000
 ```
 
 配置与 token 存放在**可执行文件同目录**下的 `.qianji-cli/config.json`（文件权限 `0600`）。工具是绿色便携的：配置跟着二进制走，换台机器把整个目录拷过去即可。
+
+### 账单与图片
+
+- `qianji bills` 拉回的 `changes` 就是账单明细（`id` / `money` / `time` / `type` / `cateid` / `assetid` / `descinfo` 等），`deletes` 是已删除账单的 id；游标分页由 `--pages N` 控制，到 `hasmore=0` 自动停。
+- 账单若带图片，账单对象会有 `images` 字段，是图片 id 数组（如 `["_eeaa93c4..."]`）。用 `qianji billimage <id>` 把 id 转成可直接下载的 URL：
+
+```bash
+qianji billimage _eeaa93c4790f4dcd9e16f62bc6109368            # 原图
+qianji billimage _eeaa93c4790f4dcd9e16f62bc6109368 --size md  # 中图 640
+```
+
+  图片存在 `http://billimg.qianjiapp.com/<id>!<规格>`，规格 `webporigin`（原图）/ `webpmd640`（中 640）/ `webpsmall240`（缩略 240），返回 webp，凭图片 id 公开访问、不需要 token。
 
 ### 设备信息（重要）
 
