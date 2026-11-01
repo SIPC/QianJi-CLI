@@ -242,17 +242,32 @@ func cmdBills(cfg *Config, args []string) {
 		}
 	}
 	c := newClient(cfg)
+	// syncv2/pull is cursor-paged: the first call uses pageoffset=0/pagesign=0,
+	// and each response carries the next page's pageoffset + pagesign and a
+	// hasmore flag. Follow the cursor rather than guessing offsets, and stop
+	// early when hasmore=0. --pages caps how many pages to pull at most.
+	pageoffset, pagesign := "0", "0"
 	for page := 0; page < maxPages; page++ {
 		env, err := c.call("syncv2", "pull", map[string]string{
 			"bookid":     book,
-			"pageoffset": itoa(int64(page)),
-			"pagesign":   "0",
+			"pageoffset": pageoffset,
+			"pagesign":   pagesign,
 		})
 		if err != nil {
 			fatal(err)
 		}
 		fmt.Printf("// page %d\n", page)
 		printJSON(env.Data)
+
+		var p struct {
+			HasMore    int    `json:"hasmore"`
+			PageOffset int64  `json:"pageoffset"`
+			PageSign   string `json:"pagesign"`
+		}
+		if json.Unmarshal(env.Data, &p) != nil || p.HasMore == 0 {
+			break
+		}
+		pageoffset, pagesign = itoa(p.PageOffset), p.PageSign
 	}
 }
 
