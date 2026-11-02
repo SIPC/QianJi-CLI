@@ -136,7 +136,7 @@ qianji billimage _eeaa93c4790f4dcd9e16f62bc6109368 --size md  # 中图 640
 
 `qianji mcp` 启动一个 HTTP MCP server，把查询和写入包成 MCP 工具（`qianji_me` / `books` / `assets` / `categories` / `bills` / `saving` / `currency` / `logins` / `repeat` / `add` / `del` / `budget` / `budget_set` / `billimage` / `raw`），供支持 MCP 的客户端调用。`qianji_budget_set` 默认只返回预览，传 `confirm=true` 才写入。纯标准库手写 JSON-RPC 2.0（`initialize` / `tools/list` / `tools/call`）。
 
-- **账单图片**：`qianji_bills` 返回的账单对象里 `images` 是图片 id 数组。把这些 id 传给 `qianji_billimage`（参数 `id` 或 `ids`，可选 `size` = origin/md/small），它会返回原图 URL（文本块）并把图片本体内联返回（base64 `image` 内容块，webp），支持 MCP 图片的客户端（Claude / ChatGPT）能直接看到小票照片，而不只是拿到一串 id。图片凭 id 公开访问，server 直接抓取、无需 token。
+- **账单图片**：`qianji_bills` 返回的账单对象里 `images` 是图片 id 数组，`image_urls` 是对应的原图 URL 数组（没有图片的账单不带这个字段）。要其他尺寸或图片本体时，把这些 id 传给 `qianji_billimage`（参数 `id` 或 `ids`，可选 `size` = origin/md/small），它会返回原图 URL（文本块）并把图片本体内联返回（base64 `image` 内容块，webp），支持 MCP 图片的客户端（Claude / ChatGPT）能直接看到小票照片，而不只是拿到一串 id。图片凭 id 公开访问，server 直接抓取、无需 token。
 
 - **认证 = 密钥路径**：端点是 `/mcp/<密钥>`，只有 POST 到正确密钥路径才响应，其它一律 404。用 `$QIANJI_MCP_PATH` 固定密钥，留空则每次启动随机生成并打印。
 

@@ -257,7 +257,7 @@ var mcpTools = []mcpTool{
 	}), func(cfg *Config, a map[string]any) (string, error) {
 		return callData(cfg, "category", "listv2", map[string]string{"bookid": aStr(a, "bookid", "-1"), "t": aStr(a, "type", "0")})
 	}},
-	{"qianji_bills", "账单查询，按时间/类型/分类id/金额/关键词筛选，返回账单 JSON 数组（最新在前）。账单的 images 字段是图片 id 数组，可传给 qianji_billimage 查看原图", objSchema(map[string]any{
+	{"qianji_bills", "账单查询，按时间/类型/分类id/金额/关键词筛选，返回账单 JSON 数组（最新在前）。带图片的账单有 images（图片 id 数组）和 image_urls（原图 URL 数组）", objSchema(map[string]any{
 		"bookid":  strProp("账本 id，默认 -1"),
 		"since":   strProp("起始日期 2006-01-02"),
 		"until":   strProp("结束日期（不含当天之后），2006-01-02"),
@@ -460,10 +460,37 @@ func billsToolRun(cfg *Config, a map[string]any) (string, error) {
 	}
 	out := make([]json.RawMessage, len(kept))
 	for i := range kept {
-		out[i] = kept[i].raw
+		out[i] = withImageURLs(kept[i].raw)
 	}
 	b, _ := json.Marshal(out)
 	return string(b), nil
+}
+
+// withImageURLs adds image_urls (original size) to a bill that has images, so a
+// client gets usable links without a second call. Other bills pass through as is.
+func withImageURLs(raw json.RawMessage) json.RawMessage {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return raw
+	}
+	var ids []string
+	if json.Unmarshal(fields["images"], &ids) != nil || len(ids) == 0 {
+		return raw
+	}
+	urls := make([]string, len(ids))
+	for i, id := range ids {
+		urls[i] = billImageHost + id + "!" + billImageSpec("origin")
+	}
+	u, err := json.Marshal(urls)
+	if err != nil {
+		return raw
+	}
+	fields["image_urls"] = u
+	b, err := json.Marshal(fields)
+	if err != nil {
+		return raw
+	}
+	return b
 }
 
 func addToolRun(cfg *Config, a map[string]any) (string, error) {
